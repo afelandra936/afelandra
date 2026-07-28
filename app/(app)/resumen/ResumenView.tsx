@@ -1,0 +1,265 @@
+"use client";
+
+import { useRef, useState, useTransition } from "react";
+import { IconX } from "@tabler/icons-react";
+import { fmt } from "@/lib/format";
+import { BarList } from "@/components/ui/BarList";
+import { actualizarCoeficientes, actualizarPin, agregarItemLista, quitarItemLista } from "@/lib/actions/config";
+import { exportarDatos, importarDatos } from "@/lib/actions/backup";
+
+type ConfigDTO = {
+  debito: number;
+  credito3: number;
+  credito6: number;
+  contado: number;
+  talles: string[];
+  tallesIndumentaria: string[];
+  tiposCalzado: string[];
+  tiposAccesorio: string[];
+};
+
+export function ResumenView({
+  metrics,
+  efectivoPorSucursal,
+  config,
+}: {
+  metrics: { facturacionHoy: number; facturacionMes: number; gananciaEstimadaMes: number; ticketPromedioMes: number };
+  efectivoPorSucursal: { label: string; value: number }[];
+  config: ConfigDTO;
+}) {
+  return (
+    <div className="view active">
+      <header className="view-head">
+        <div>
+          <h1>Resumen del negocio</h1>
+          <p>Cómo viene el mes, de un vistazo.</p>
+        </div>
+      </header>
+
+      <div className="grid-metrics">
+        <div className="metric">
+          <div className="label">Facturación de hoy</div>
+          <div className="value">{fmt(metrics.facturacionHoy)}</div>
+        </div>
+        <div className="metric">
+          <div className="label">Facturación del mes</div>
+          <div className="value">{fmt(metrics.facturacionMes)}</div>
+        </div>
+        <div className="metric">
+          <div className="label">Ganancia estimada (mes)</div>
+          <div className={`value ${metrics.gananciaEstimadaMes >= 0 ? "pos" : "neg"}`}>{fmt(metrics.gananciaEstimadaMes)}</div>
+        </div>
+        <div className="metric">
+          <div className="label">Ticket promedio (mes)</div>
+          <div className="value">{fmt(metrics.ticketPromedioMes)}</div>
+        </div>
+      </div>
+
+      <div className="section-title">Efectivo de hoy por sucursal</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <BarList entries={efectivoPorSucursal.map((e) => ({ ...e, display: fmt(e.value) }))} />
+      </div>
+
+      <div className="section-title">Coeficientes de precio</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <CoeficientesForm config={config} />
+      </div>
+
+      <div className="section-title">Talles y tipos de producto</div>
+      <div className="card cols-2" style={{ marginBottom: 24 }}>
+        <ListaEditable titulo="Talles de calzado" campo="talles" valores={config.talles} />
+        <ListaEditable titulo="Talles de indumentaria" campo="tallesIndumentaria" valores={config.tallesIndumentaria} />
+        <ListaEditable titulo="Tipos de calzado" campo="tiposCalzado" valores={config.tiposCalzado} />
+        <ListaEditable titulo="Tipos de accesorio" campo="tiposAccesorio" valores={config.tiposAccesorio} />
+      </div>
+
+      <div className="section-title">Seguridad</div>
+      <div className="card cols-2" style={{ marginBottom: 24 }}>
+        <PinForm role="admin" label="Código de acceso — Afelandra (admin)" />
+        <PinForm role="empleada" label="Código de acceso — Vendedor" />
+      </div>
+
+      <div className="section-title">Backup</div>
+      <div className="card">
+        <BackupControls />
+      </div>
+    </div>
+  );
+}
+
+function CoeficientesForm({ config }: { config: ConfigDTO }) {
+  const [debito, setDebito] = useState(String(config.debito));
+  const [credito3, setCredito3] = useState(String(config.credito3));
+  const [credito6, setCredito6] = useState(String(config.credito6));
+  const [contado, setContado] = useState(String(config.contado));
+  const [saved, setSaved] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaved(false);
+    startTransition(async () => {
+      await actualizarCoeficientes({
+        debito: Number(debito),
+        credito3: Number(credito3),
+        credito6: Number(credito6),
+        contado: Number(contado),
+      });
+      setSaved(true);
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div className="config-grid">
+        <div className="field">
+          <label htmlFor="cf-debito">Débito / transferencia (x)</label>
+          <input id="cf-debito" type="number" step="0.01" value={debito} onChange={(e) => setDebito(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cf-credito3">Crédito 3 cuotas (x)</label>
+          <input id="cf-credito3" type="number" step="0.01" value={credito3} onChange={(e) => setCredito3(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cf-credito6">Crédito 6 cuotas (x)</label>
+          <input id="cf-credito6" type="number" step="0.01" value={credito6} onChange={(e) => setCredito6(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cf-contado">Descuento efectivo (%)</label>
+          <input id="cf-contado" type="number" step="0.5" value={contado} onChange={(e) => setContado(e.target.value)} />
+        </div>
+      </div>
+      <button className="btn small" type="submit" disabled={pending}>Guardar coeficientes</button>
+      {saved && <span className="hint" style={{ marginLeft: 10 }}>Guardado.</span>}
+    </form>
+  );
+}
+
+function ListaEditable({
+  titulo,
+  campo,
+  valores,
+}: {
+  titulo: string;
+  campo: "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio";
+  valores: string[];
+}) {
+  const [nuevo, setNuevo] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nuevo.trim()) return;
+    startTransition(async () => {
+      await agregarItemLista(campo, nuevo.trim());
+      setNuevo("");
+    });
+  }
+
+  return (
+    <div>
+      <h3 style={{ fontSize: 13, marginBottom: 8 }}>{titulo}</h3>
+      <div className="talles-grid" style={{ marginBottom: 8 }}>
+        {valores.map((v) => (
+          <span key={v} className="tag fijo" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {v}
+            <button
+              type="button"
+              onClick={() => startTransition(() => quitarItemLista(campo, v))}
+              style={{ all: "unset", cursor: "pointer", display: "flex" }}
+              disabled={pending}
+            >
+              <IconX size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
+      <form onSubmit={handleAdd} style={{ display: "flex", gap: 6 }}>
+        <input value={nuevo} onChange={(e) => setNuevo(e.target.value)} style={{ height: 30, fontSize: 12 }} placeholder="Agregar..." />
+        <button className="btn ghost small" type="submit" disabled={pending}>+</button>
+      </form>
+    </div>
+  );
+}
+
+function PinForm({ role, label }: { role: "admin" | "empleada"; label: string }) {
+  const [pin, setPin] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaved(false);
+    startTransition(async () => {
+      await actualizarPin(role, pin);
+      setSaved(true);
+      setPin("");
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="field">
+      <label>{label}</label>
+      <input type="password" placeholder="Dejar vacío para quitar el código" value={pin} onChange={(e) => setPin(e.target.value)} style={{ marginBottom: 8, maxWidth: 220 }} />
+      <div>
+        <button className="btn small" type="submit" disabled={pending}>Guardar</button>
+        {saved && <span className="hint" style={{ marginLeft: 10 }}>Guardado.</span>}
+      </div>
+    </form>
+  );
+}
+
+function BackupControls() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  async function handleExport() {
+    const data = await exportarDatos();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `afelandra-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportClick() {
+    fileRef.current?.click();
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!confirm("Esto reemplaza TODOS los datos actuales por los del backup. ¿Continuar?")) {
+      e.target.value = "";
+      return;
+    }
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      startTransition(async () => {
+        try {
+          const parsed = JSON.parse(reader.result as string);
+          await importarDatos(parsed);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Archivo inválido");
+        }
+      });
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <button className="btn ghost small" type="button" onClick={handleExport}>Exportar backup (.json)</button>
+      <button className="btn ghost small" type="button" onClick={handleImportClick} disabled={pending}>
+        Importar backup
+      </button>
+      <input ref={fileRef} type="file" accept="application/json" onChange={handleFileChange} style={{ display: "none" }} />
+      {error && <span style={{ color: "var(--danger)", fontSize: 12 }}>{error}</span>}
+    </div>
+  );
+}

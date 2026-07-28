@@ -1,0 +1,167 @@
+// Prisma schema — Afelandra (gestión de zapatería)
+// Ver plan en C:\Users\Usuario\.claude\plans\graceful-mapping-dewdrop.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Catálogo / inventario ----------
+
+model Producto {
+  id         String   @id @default(cuid())
+  nombre     String
+  tipo       String
+  color      String
+  marca      String
+  proveedorId String?
+  proveedor  Proveedor? @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  talle      String   @default("") // "" = Único
+  costo      Decimal  @db.Decimal(12, 2)
+  stock      Int      @default(0)
+  stockMin   Int      @default(2)
+  codigo     String?  @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ventas     Venta[]
+
+  @@index([proveedorId])
+  @@index([nombre])
+}
+
+// ---------- Ventas ----------
+
+model Venta {
+  id            String   @id @default(cuid())
+  fecha         DateTime
+  productoId    String
+  producto      Producto @relation(fields: [productoId], references: [id])
+  // snapshot histórico: no cambia si luego se edita el producto
+  nombre        String
+  tipo          String
+  proveedor     String?
+  talle         String
+  cantidad      Int
+  medioPago     String
+  vendedor      String
+  clienteId     String?
+  cliente       Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  clienteNombre String?  // cliente ocasional no registrado
+  observaciones String?
+  sucursal      String?
+  precioVenta   Decimal  @db.Decimal(12, 2) // unitario
+  costoUnitario Decimal  @db.Decimal(12, 2) // snapshot del costo al momento de vender
+  createdAt     DateTime @default(now())
+
+  pagos         PagoVenta[]
+
+  @@index([productoId])
+  @@index([clienteId])
+  @@index([fecha])
+}
+
+model PagoVenta {
+  id      String  @id @default(cuid())
+  ventaId String
+  venta   Venta   @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  medio   String
+  monto   Decimal @db.Decimal(12, 2)
+
+  @@index([ventaId])
+}
+
+// ---------- Gastos ----------
+
+model Gasto {
+  id        String   @id @default(cuid())
+  fecha     DateTime @default(now())
+  concepto  String
+  tipo      String   // "fijo" | "variable"
+  monto     Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  @@index([fecha])
+}
+
+// ---------- Proveedores ----------
+
+model Proveedor {
+  id            String   @id @default(cuid())
+  nombre        String   @unique
+  marca         String?
+  contacto      String?
+  formaPago     String?
+  plazo         String?
+  ultimaCompra  DateTime?
+  deudaInicial  Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  productos     Producto[]
+  remitos       Remito[]
+  pagos         PagoProveedor[]
+}
+
+model Remito {
+  id           String    @id @default(cuid())
+  proveedorId  String
+  proveedor    Proveedor @relation(fields: [proveedorId], references: [id])
+  fecha        DateTime
+  numero       String?
+  montoSinIva  Decimal   @db.Decimal(12, 2)
+  tieneIva     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  @@index([proveedorId])
+}
+
+model PagoProveedor {
+  id          String    @id @default(cuid())
+  proveedorId String
+  proveedor   Proveedor @relation(fields: [proveedorId], references: [id])
+  fecha       DateTime
+  monto       Decimal   @db.Decimal(12, 2)
+  medio       String    // Efectivo | Transferencia | Cheque | Depósito
+  nota        String?
+  createdAt   DateTime  @default(now())
+
+  @@index([proveedorId])
+}
+
+// ---------- Clientes ----------
+
+model Cliente {
+  id        String    @id @default(cuid())
+  nombre    String
+  dni       String?
+  email     String?
+  telefono  String?
+  instagram String?
+  cumple    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  ventas    Venta[]
+}
+
+// ---------- Configuración global (fila única) ----------
+
+model Config {
+  id                 Int      @id @default(1)
+  debito             Decimal  @default(2.20) @db.Decimal(6, 2)
+  credito3           Decimal  @default(2.42) @db.Decimal(6, 2)
+  credito6           Decimal  @default(2.82) @db.Decimal(6, 2)
+  contado            Decimal  @default(10)   @db.Decimal(6, 2) // % descuento efectivo
+  pinAdminHash       String?
+  pinVendedorHash    String?
+  talles             String[] @default(["35","36","37","38","39","40","41"])
+  tallesIndumentaria String[] @default(["S","M","L","XL","XXL","XXXL"])
+  tiposCalzado       String[] @default(["Zueco","Bota","Borcego","Zapatilla","Sandalia","Botineta","Acordonado","Mocasín","Estileto","Texana"])
+  tiposAccesorio     String[] @default(["Cartera","Bandolera","Billetera","Indumentaria","Cintos"])
+  updatedAt          DateTime @updatedAt
+}

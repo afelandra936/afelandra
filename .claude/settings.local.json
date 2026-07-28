@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "PowerShell(node -v)",
+      "PowerShell(npm -v)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); node -v; npm -v)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); node -v; npm -v; npx -v)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\\\\afelandra\"; npm install 2>&1 | Out-String -Width 200)",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\\\\afelandra\"; Test-Path node_modules; \\(Get-ChildItem node_modules -Force | Measure-Object\\).Count)",
+      "PowerShell(cmd /c rmdir /s /q \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\\\\afelandra\")",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; npm help approve-scripts 2>&1 | Out-String -Width 200)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; npx prisma init --datasource-provider postgresql 2>&1 | Out-String -Width 200)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; npx prisma generate 2>&1 | Out-String -Width 200)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; npm install @prisma/adapter-pg pg 2>&1 | Out-String -Width 200; npm install -D @types/pg 2>&1 | Out-String -Width 200)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "Bash(awk 'NR==118{print length\\($0\\)} NR==138{print length\\($0\\)}' \"/c/Users/Usuario/Downloads/afelandra-gestion_29.html\")",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; npm run build 2>&1 | Out-String -Width 200)",
+      "Bash(ls \"/c/Program Files/nodejs/\" | head -20)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; node clear-test-data.mjs 2>&1 | Out-String -Width 200)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\"; node check-config.mjs 2>&1 | Out-String -Width 200; Remove-Item check-config.mjs -Force)",
+      "Bash(git -C \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\" status)",
+      "Bash(git -C \"C:\\\\Users\\\\Usuario\\\\Nuevo proyecto\" log --oneline -20)",
+      "Bash(git add *)"
+    ]
+  }
+}
