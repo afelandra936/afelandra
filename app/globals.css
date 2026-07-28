@@ -68,14 +68,9 @@ a {
   gap: 10px;
 }
 
-.brand svg {
-  width: 64px;
-  height: 64px;
-}
-
-.brand h1 {
-  font-size: 30px;
-  letter-spacing: 0.5px;
+.brand img {
+  width: 220px;
+  height: auto;
 }
 
 .brand p {
@@ -158,14 +153,9 @@ a {
   gap: 10px;
 }
 
-.sidebar .brand-mini svg {
-  width: 30px;
-  height: 30px;
-}
-
-.sidebar .brand-mini span {
-  font-family: var(--font-fraunces), serif;
-  font-size: 18px;
+.sidebar .brand-mini img {
+  width: 100%;
+  height: auto;
 }
 
 .nav {

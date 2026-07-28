@@ -33,8 +33,7 @@ export function Sidebar({ role }: { role: Role }) {
   return (
     <aside className="sidebar">
       <div className="brand-mini">
-        <BrandMark />
-        <span>Afelandra</span>
+        <BrandMark variant="on-light" priority />
       </div>
       <nav className="nav">
         {items.map((item) => {

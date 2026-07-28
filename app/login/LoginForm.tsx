@@ -44,8 +44,7 @@ export function LoginForm({
   return (
     <div id="login">
       <div className="brand">
-        <BrandMark />
-        <h1>Afelandra</h1>
+        <BrandMark variant="on-dark" priority />
         <p>Gestión</p>
       </div>
 
