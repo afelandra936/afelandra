@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { IconTrash, IconPlus, IconCopy, IconPencil } from "@tabler/icons-react";
 import { fmt } from "@/lib/format";
 import { esAgotado, esStockBajo } from "@/lib/stock";
+import { BarChart } from "@/components/charts/BarChart";
 import {
   actualizarProducto,
   crearProducto,
@@ -77,6 +78,22 @@ export function StockView(props: Props) {
     const sinMovimiento = productos.filter((p) => p.stock > 0 && sinMovimientoSet.has(p.id)).length;
     return { valorStock, agotados, pocoStock, sinMovimiento };
   }, [productos, sinMovimientoSet]);
+
+  const stockPorTipo = useMemo(() => {
+    const unidades = new Map<string, number>();
+    const modelos = new Map<string, Set<string>>();
+    for (const p of productos) {
+      unidades.set(p.tipo, (unidades.get(p.tipo) ?? 0) + p.stock);
+      if (!modelos.has(p.tipo)) modelos.set(p.tipo, new Set());
+      modelos.get(p.tipo)!.add(p.nombre);
+    }
+    return {
+      unidades: [...unidades.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value })),
+      modelos: [...modelos.entries()]
+        .sort((a, b) => b[1].size - a[1].size)
+        .map(([label, set]) => ({ label, value: set.size })),
+    };
+  }, [productos]);
 
   return (
     <div className="view active">
@@ -173,6 +190,22 @@ export function StockView(props: Props) {
           </table>
         )}
       </div>
+
+      {isAdmin && (
+        <>
+          <div className="section-title">Stock por categoría</div>
+          <div className="cols-2">
+            <div className="card">
+              <h3 style={{ marginBottom: 12, fontSize: 14 }}>Unidades en stock</h3>
+              <BarChart entries={stockPorTipo.unidades} />
+            </div>
+            <div className="card">
+              <h3 style={{ marginBottom: 12, fontSize: 14 }}>Modelos distintos</h3>
+              <BarChart entries={stockPorTipo.modelos} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
