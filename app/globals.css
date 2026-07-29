@@ -266,6 +266,7 @@ header.view-head p {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 20px;
+  overflow-x: auto;
 }
 
 .cols-2 {
@@ -358,6 +359,11 @@ select:focus {
 input:disabled {
   background: var(--surface-soft);
   color: var(--ink-soft);
+}
+
+td input,
+td select {
+  min-width: auto;
 }
 
 ::placeholder {

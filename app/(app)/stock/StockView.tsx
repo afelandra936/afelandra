@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { IconTrash, IconPlus } from "@tabler/icons-react";
+import { IconTrash, IconPlus, IconCopy } from "@tabler/icons-react";
 import { fmt } from "@/lib/format";
 import { esAgotado, esStockBajo } from "@/lib/stock";
 import {
@@ -41,6 +41,17 @@ export function StockView(props: Props) {
   const { role, productos } = props;
   const isAdmin = role === "admin";
   const [showForm, setShowForm] = useState(false);
+  const [seed, setSeed] = useState<ProductoDTO | null>(null);
+
+  function abrirNuevo() {
+    setSeed(null);
+    setShowForm(true);
+  }
+
+  function abrirDuplicado(producto: ProductoDTO) {
+    setSeed(producto);
+    setShowForm(true);
+  }
 
   const sinMovimientoSet = useMemo(() => new Set(props.sinMovimientoIds), [props.sinMovimientoIds]);
   const tiposAccesorioSet = useMemo(() => new Set(props.tiposAccesorio), [props.tiposAccesorio]);
@@ -61,7 +72,7 @@ export function StockView(props: Props) {
           <p>Productos, tipos, talles y cantidad disponible.</p>
         </div>
         {isAdmin && (
-          <button className="btn" type="button" onClick={() => setShowForm((v) => !v)}>
+          <button className="btn" type="button" onClick={() => (showForm ? setShowForm(false) : abrirNuevo())}>
             <IconPlus size={16} style={{ verticalAlign: "-3px", marginRight: 6 }} />
             {showForm ? "Cerrar" : "Nuevo producto"}
           </button>
@@ -91,7 +102,12 @@ export function StockView(props: Props) {
 
       {isAdmin && showForm && (
         <div className="card" style={{ marginBottom: 24 }}>
-          <NuevoProductoForm {...props} onDone={() => setShowForm(false)} />
+          <NuevoProductoForm
+            key={seed?.id ?? "new"}
+            {...props}
+            seed={seed}
+            onDone={() => setShowForm(false)}
+          />
         </div>
       )}
 
@@ -122,6 +138,7 @@ export function StockView(props: Props) {
                   role={role}
                   esAccesorio={tiposAccesorioSet.has(p.tipo)}
                   sinMovimiento={p.stock > 0 && sinMovimientoSet.has(p.id)}
+                  onDuplicate={abrirDuplicado}
                 />
               ))}
             </tbody>
@@ -137,11 +154,13 @@ function ProductoRow({
   role,
   esAccesorio,
   sinMovimiento,
+  onDuplicate,
 }: {
   producto: ProductoDTO;
   role: Role;
   esAccesorio: boolean;
   sinMovimiento: boolean;
+  onDuplicate: (producto: ProductoDTO) => void;
 }) {
   const isAdmin = role === "admin";
   const [marca, setMarca] = useState(producto.marca);
@@ -200,14 +219,14 @@ function ProductoRow({
       </td>
       <td>
         {isAdmin ? (
-          <input value={marca} onChange={(e) => setMarca(e.target.value)} onBlur={() => marca !== producto.marca && commit("marca", marca)} style={{ minWidth: 90 }} disabled={pending} />
+          <input value={marca} onChange={(e) => setMarca(e.target.value)} onBlur={() => marca !== producto.marca && commit("marca", marca)} style={{ width: 70 }} disabled={pending} />
         ) : (
           producto.marca
         )}
       </td>
       <td>
         {isAdmin ? (
-          <input value={color} onChange={(e) => setColor(e.target.value)} onBlur={() => color !== producto.color && commit("color", color)} style={{ minWidth: 80 }} disabled={pending} />
+          <input value={color} onChange={(e) => setColor(e.target.value)} onBlur={() => color !== producto.color && commit("color", color)} style={{ width: 60 }} disabled={pending} />
         ) : (
           producto.color
         )}
@@ -219,7 +238,7 @@ function ProductoRow({
             value={codigo}
             onChange={(e) => setCodigo(e.target.value)}
             onBlur={() => codigo !== (producto.codigo ?? "") && commit("codigo", codigo || null)}
-            style={{ minWidth: 100 }}
+            style={{ width: 80 }}
             disabled={pending}
           />
         ) : (
@@ -235,7 +254,7 @@ function ProductoRow({
             value={costo}
             onChange={(e) => setCosto(e.target.value)}
             onBlur={() => Number(costo) !== producto.costo && commit("costo", Number(costo))}
-            style={{ width: 90 }}
+            style={{ width: 70 }}
             disabled={pending}
           />
         </td>
@@ -248,7 +267,7 @@ function ProductoRow({
             value={stock}
             onChange={(e) => setStock(e.target.value)}
             onBlur={() => Number(stock) !== producto.stock && commit("stock", Number(stock))}
-            style={{ width: 70 }}
+            style={{ width: 55 }}
             disabled={pending}
           />
         ) : sumando ? (
@@ -280,7 +299,7 @@ function ProductoRow({
             value={stockMin}
             onChange={(e) => setStockMin(e.target.value)}
             onBlur={() => Number(stockMin) !== producto.stockMin && commit("stockMin", Number(stockMin))}
-            style={{ width: 60 }}
+            style={{ width: 45 }}
             disabled={pending}
           />
         ) : (
@@ -289,9 +308,14 @@ function ProductoRow({
       </td>
       <td>
         {isAdmin ? (
-          <button className="btn danger small" type="button" onClick={handleEliminar} disabled={pending}>
-            <IconTrash size={14} />
-          </button>
+          <span style={{ display: "flex", gap: 6 }}>
+            <button className="btn ghost small" type="button" onClick={() => onDuplicate(producto)} disabled={pending} title="Duplicar">
+              <IconCopy size={14} />
+            </button>
+            <button className="btn danger small" type="button" onClick={handleEliminar} disabled={pending}>
+              <IconTrash size={14} />
+            </button>
+          </span>
         ) : (
           !sumando && (
             <button className="btn ghost small" type="button" onClick={() => setSumando(true)}>
@@ -306,14 +330,15 @@ function ProductoRow({
   );
 }
 
-function NuevoProductoForm(props: Props & { onDone: () => void }) {
-  const [nombre, setNombre] = useState("");
-  const [tipo, setTipo] = useState(props.tiposCalzado[0] ?? "");
-  const [color, setColor] = useState("");
-  const [marca, setMarca] = useState("");
-  const [proveedorNombre, setProveedorNombre] = useState("");
-  const [costo, setCosto] = useState("");
-  const [stockMin, setStockMin] = useState("2");
+function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: () => void }) {
+  const { seed } = props;
+  const [nombre, setNombre] = useState(seed?.nombre ?? "");
+  const [tipo, setTipo] = useState(seed?.tipo ?? props.tiposCalzado[0] ?? "");
+  const [color, setColor] = useState(seed?.color ?? "");
+  const [marca, setMarca] = useState(seed?.marca ?? "");
+  const [proveedorNombre, setProveedorNombre] = useState(seed?.proveedor?.nombre ?? "");
+  const [costo, setCosto] = useState(seed ? String(seed.costo) : "");
+  const [stockMin, setStockMin] = useState(seed ? String(seed.stockMin) : "2");
   const [seleccion, setSeleccion] = useState<Record<string, { activo: boolean; stock: string; codigo: string }>>({});
   const [cantidadRapida, setCantidadRapida] = useState("1");
   const [error, setError] = useState<string | null>(null);
@@ -383,6 +408,11 @@ function NuevoProductoForm(props: Props & { onDone: () => void }) {
 
   return (
     <form className="inline-form" onSubmit={handleSubmit}>
+      {seed && (
+        <p className="hint" style={{ flexBasis: "100%", margin: 0 }}>
+          Duplicando &quot;{seed.nombre}&quot; — elegí el talle nuevo y la cantidad.
+        </p>
+      )}
       <div className="field">
         <label htmlFor="p-nombre">Nombre</label>
         <input id="p-nombre" placeholder="Bota cuero negra" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
