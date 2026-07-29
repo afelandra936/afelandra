@@ -150,11 +150,16 @@ function VentaRow({ venta }: { venta: VentaDTO }) {
   );
 }
 
+function labelProducto(p: ProductoDTO): string {
+  return `${p.nombre} ${p.talle ? `(${p.talle})` : "(Único)"} — ${p.marca} — stock ${p.stock}`;
+}
+
 function NuevaVentaForm(props: Props) {
   const { productos, config } = props;
 
   const [codigoBarras, setCodigoBarras] = useState("");
   const [productoId, setProductoId] = useState("");
+  const [productoQuery, setProductoQuery] = useState("");
   const [cantidad, setCantidad] = useState("1");
   const [medioPago, setMedioPago] = useState<string>(MEDIOS[0]);
   const [dividido, setDividido] = useState(false);
@@ -170,6 +175,7 @@ function NuevaVentaForm(props: Props) {
   const [pending, startTransition] = useTransition();
 
   const producto = useMemo(() => productos.find((p) => p.id === productoId) ?? null, [productos, productoId]);
+  const productosDisponibles = useMemo(() => productos.filter((p) => p.stock > 0), [productos]);
   const cantidadNum = Number(cantidad) || 0;
   const costoTotal = producto ? producto.costo * cantidadNum : 0;
   const promocion = useMemo(
@@ -195,6 +201,7 @@ function NuevaVentaForm(props: Props) {
     const match = productos.find((p) => p.codigo === codigoBarras.trim());
     if (match) {
       setProductoId(match.id);
+      setProductoQuery(labelProducto(match));
       setCodigoBarras("");
     }
   }
@@ -251,6 +258,7 @@ function NuevaVentaForm(props: Props) {
       }
 
       setProductoId("");
+      setProductoQuery("");
       setCantidad("1");
       setDividido(false);
       setPagosParciales([]);
@@ -279,14 +287,25 @@ function NuevaVentaForm(props: Props) {
       </div>
       <div className="field" style={{ minWidth: 240 }}>
         <label htmlFor="v-producto">Producto</label>
-        <select id="v-producto" value={productoId} onChange={(e) => setProductoId(e.target.value)} required>
-          <option value="">Elegir...</option>
-          {productos.map((p) => (
-            <option key={p.id} value={p.id} disabled={p.stock === 0}>
-              {p.nombre} {p.talle ? `(${p.talle})` : "(Único)"} — {p.marca} — stock {p.stock}
-            </option>
+        <input
+          id="v-producto"
+          list="v-productos-list"
+          placeholder="Buscar por nombre..."
+          autoComplete="off"
+          value={productoQuery}
+          onChange={(e) => {
+            const texto = e.target.value;
+            setProductoQuery(texto);
+            const match = productosDisponibles.find((p) => labelProducto(p) === texto);
+            setProductoId(match ? match.id : "");
+          }}
+          required
+        />
+        <datalist id="v-productos-list">
+          {productosDisponibles.map((p) => (
+            <option key={p.id} value={labelProducto(p)} />
           ))}
-        </select>
+        </datalist>
       </div>
       <div className="field">
         <label htmlFor="v-cantidad">Cantidad</label>
