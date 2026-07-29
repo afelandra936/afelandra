@@ -52,6 +52,10 @@ export function ClientesView({ clientes, cumpleHoy }: { clientes: ClienteDTO[]; 
               <tr>
                 <th>Nombre</th>
                 <th>Contacto</th>
+                <th>DNI</th>
+                <th>Email</th>
+                <th>Instagram</th>
+                <th>Cumpleaños</th>
                 <th>Última compra</th>
                 <th>Compras</th>
                 <th>Total gastado</th>
@@ -82,6 +86,10 @@ function ClienteRow({ cliente }: { cliente: ClienteDTO }) {
     <tr>
       <td>{cliente.nombre}</td>
       <td>{cliente.telefono ?? cliente.email ?? cliente.instagram ?? "—"}</td>
+      <td>{cliente.dni ?? "—"}</td>
+      <td>{cliente.email ?? "—"}</td>
+      <td>{cliente.instagram ?? "—"}</td>
+      <td>{cliente.cumple ? fmtDate(cliente.cumple) : "—"}</td>
       <td>{cliente.ultima ? fmtDate(cliente.ultima) : "—"}</td>
       <td className="num">{cliente.compras}</td>
       <td className="num">{fmt(cliente.totalGastado)}</td>

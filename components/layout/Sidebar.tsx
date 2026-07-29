@@ -10,6 +10,7 @@ import {
   IconUsers,
   IconReceipt2,
   IconChartBar,
+  IconDiscount2,
   IconLogout,
 } from "@tabler/icons-react";
 import { BrandMark } from "@/components/BrandMark";
@@ -19,6 +20,7 @@ import type { Role } from "@/lib/auth";
 const NAV_ITEMS = [
   { href: "/resumen", label: "Resumen", icon: IconLayoutDashboard, adminOnly: true },
   { href: "/ventas", label: "Ventas", icon: IconShoppingBag, adminOnly: false },
+  { href: "/promociones", label: "Promociones", icon: IconDiscount2, adminOnly: true },
   { href: "/stock", label: "Stock", icon: IconPackage, adminOnly: false },
   { href: "/proveedores", label: "Proveedores", icon: IconTruckDelivery, adminOnly: true },
   { href: "/clientes", label: "Clientes", icon: IconUsers, adminOnly: false },

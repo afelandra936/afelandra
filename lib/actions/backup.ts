@@ -18,8 +18,12 @@ export type BackupData = {
     proveedor: string | null; talle: string; cantidad: number; medioPago: string;
     vendedor: string; clienteId: string | null; clienteNombre: string | null;
     observaciones: string | null; sucursal: string | null; precioVenta: number;
-    costoUnitario: number;
+    costoUnitario: number; promocionId: string | null; promocionNombre: string | null;
     pagos: { id: string; ventaId: string; medio: string; monto: number }[];
+  }[];
+  promociones: {
+    id: string; nombre: string; tipo: string; valorPorcentaje: number | null;
+    fechaDesde: string | null; fechaHasta: string | null; activa: boolean;
   }[];
   gastos: { id: string; fecha: string; concepto: string; tipo: string; monto: number }[];
   proveedores: {
@@ -48,16 +52,18 @@ export type BackupData = {
 export async function exportarDatos(): Promise<BackupData> {
   await requireRole("admin");
 
-  const [productos, ventas, gastos, proveedores, remitos, pagosProveedores, clientes, config] = await Promise.all([
-    prisma.producto.findMany(),
-    prisma.venta.findMany({ include: { pagos: true } }),
-    prisma.gasto.findMany(),
-    prisma.proveedor.findMany(),
-    prisma.remito.findMany(),
-    prisma.pagoProveedor.findMany(),
-    prisma.cliente.findMany(),
-    getConfig(),
-  ]);
+  const [productos, ventas, gastos, proveedores, remitos, pagosProveedores, clientes, config, promociones] =
+    await Promise.all([
+      prisma.producto.findMany(),
+      prisma.venta.findMany({ include: { pagos: true } }),
+      prisma.gasto.findMany(),
+      prisma.proveedor.findMany(),
+      prisma.remito.findMany(),
+      prisma.pagoProveedor.findMany(),
+      prisma.cliente.findMany(),
+      getConfig(),
+      prisma.promocion.findMany(),
+    ]);
 
   return serialize<BackupData>({
     exportadoEl: new Date().toISOString(),
@@ -69,6 +75,7 @@ export async function exportarDatos(): Promise<BackupData> {
     pagosProveedores,
     clientes,
     config,
+    promociones,
   });
 }
 
@@ -83,6 +90,7 @@ export async function importarDatos(data: BackupData) {
     await tx.producto.deleteMany();
     await tx.cliente.deleteMany();
     await tx.proveedor.deleteMany();
+    await tx.promocion.deleteMany();
 
     for (const p of data.proveedores) {
       await tx.proveedor.create({
@@ -131,6 +139,20 @@ export async function importarDatos(data: BackupData) {
       });
     }
 
+    for (const promo of data.promociones) {
+      await tx.promocion.create({
+        data: {
+          id: promo.id,
+          nombre: promo.nombre,
+          tipo: promo.tipo,
+          valorPorcentaje: promo.valorPorcentaje,
+          fechaDesde: promo.fechaDesde ? new Date(promo.fechaDesde) : null,
+          fechaHasta: promo.fechaHasta ? new Date(promo.fechaHasta) : null,
+          activa: promo.activa,
+        },
+      });
+    }
+
     for (const v of data.ventas) {
       await tx.venta.create({
         data: {
@@ -150,6 +172,8 @@ export async function importarDatos(data: BackupData) {
           sucursal: v.sucursal,
           precioVenta: v.precioVenta,
           costoUnitario: v.costoUnitario,
+          promocionId: v.promocionId,
+          promocionNombre: v.promocionNombre,
           pagos: { createMany: { data: v.pagos.map((pg) => ({ medio: pg.medio, monto: pg.monto })) } },
         },
       });
@@ -202,7 +226,7 @@ export async function importarDatos(data: BackupData) {
     });
   });
 
-  for (const path of ["/resumen", "/ventas", "/stock", "/proveedores", "/clientes", "/gastos", "/rentabilidad"]) {
+  for (const path of ["/resumen", "/ventas", "/stock", "/proveedores", "/clientes", "/gastos", "/rentabilidad", "/promociones"]) {
     revalidatePath(path);
   }
 }

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
-import { MEDIOS, precioUnitario, calcularMontoResto } from "@/lib/pricing";
+import { MEDIOS, precioUnitario, calcularMontoResto, factorPromocion } from "@/lib/pricing";
 import { registrarVenta, eliminarVenta } from "@/lib/actions/ventas";
 import { BarChart } from "@/components/charts/BarChart";
 import type { Role } from "@/lib/auth";
@@ -29,6 +29,14 @@ type VentaDTO = {
   vendedor: string;
   clienteNombre: string | null;
   precioVenta: number;
+  promocionNombre: string | null;
+};
+
+type PromocionDTO = {
+  id: string;
+  nombre: string;
+  tipo: string;
+  valorPorcentaje: number | null;
 };
 
 type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
@@ -40,6 +48,7 @@ type Props = {
   clientesNombres: string[];
   config: ConfigDTO;
   charts: { topProductos: ChartEntry[]; topProveedores: ChartEntry[]; medios: ChartEntry[]; vendedores: ChartEntry[] } | null;
+  promociones: PromocionDTO[];
 };
 
 export function VentasView(props: Props) {
@@ -70,6 +79,7 @@ export function VentasView(props: Props) {
                 <th>Cant.</th>
                 <th>Medio</th>
                 <th>Total</th>
+                <th>Promo</th>
                 <th>Vendedor</th>
                 <th>Cliente</th>
                 <th></th>
@@ -128,6 +138,7 @@ function VentaRow({ venta }: { venta: VentaDTO }) {
       <td className="num">{venta.cantidad}</td>
       <td>{venta.medioPago}</td>
       <td className="num">{fmt(venta.precioVenta * venta.cantidad)}</td>
+      <td>{venta.promocionNombre ?? "—"}</td>
       <td>{venta.vendedor}</td>
       <td>{venta.clienteNombre ?? "—"}</td>
       <td>
@@ -154,12 +165,18 @@ function NuevaVentaForm(props: Props) {
   const [clienteNombre, setClienteNombre] = useState("");
   const [sucursal, setSucursal] = useState("");
   const [observaciones, setObservaciones] = useState("");
+  const [promocionId, setPromocionId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const producto = useMemo(() => productos.find((p) => p.id === productoId) ?? null, [productos, productoId]);
   const cantidadNum = Number(cantidad) || 0;
   const costoTotal = producto ? producto.costo * cantidadNum : 0;
+  const promocion = useMemo(
+    () => props.promociones.find((p) => p.id === promocionId) ?? null,
+    [props.promociones, promocionId]
+  );
+  const factor = factorPromocion(promocion, cantidadNum);
 
   const precioSimple = producto ? precioUnitario(producto.costo, medioPago, config) * cantidadNum : 0;
 
@@ -170,6 +187,7 @@ function NuevaVentaForm(props: Props) {
   }, [producto, pagosParciales, medioResto, costoTotal, config]);
 
   const totalDividido = pagosParciales.reduce((acc, p) => acc + (Number(p.monto) || 0), 0) + montoResto;
+  const totalConPromo = (dividido ? totalDividido : precioSimple) * factor;
 
   function handleBarcode(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
@@ -219,6 +237,7 @@ function NuevaVentaForm(props: Props) {
         clienteNombre: clienteNombre || undefined,
         observaciones: observaciones || undefined,
         sucursal: sucursal || undefined,
+        promocionId: promocionId || undefined,
         confirmarPerdida,
       });
 
@@ -237,6 +256,7 @@ function NuevaVentaForm(props: Props) {
       setPagosParciales([]);
       setClienteNombre("");
       setObservaciones("");
+      setPromocionId("");
     });
   }
 
@@ -281,9 +301,20 @@ function NuevaVentaForm(props: Props) {
         </select>
       </div>
       <div className="field">
+        <label htmlFor="v-promo">Promoción</label>
+        <select id="v-promo" value={promocionId} onChange={(e) => setPromocionId(e.target.value)}>
+          <option value="">Ninguna</option>
+          {props.promociones.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nombre} {p.tipo === "porcentaje" ? `(${p.valorPorcentaje}% OFF)` : "(2x1)"}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
         <label>Precio</label>
         <div style={{ height: 36, display: "flex", alignItems: "center" }} className="num">
-          {fmt(dividido ? totalDividido : precioSimple)}
+          {fmt(totalConPromo)}
         </div>
       </div>
       <div className="field">

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 const SESSION_COOKIE = "afelandra_session";
-const ADMIN_ONLY_PREFIXES = ["/resumen", "/proveedores", "/gastos", "/rentabilidad"];
+const ADMIN_ONLY_PREFIXES = ["/resumen", "/proveedores", "/gastos", "/rentabilidad", "/promociones"];
 
 function getSecret() {
   const secret = process.env.AUTH_SECRET;

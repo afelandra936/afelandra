@@ -54,15 +54,35 @@ model Venta {
   clienteNombre String?  // cliente ocasional no registrado
   observaciones String?
   sucursal      String?
-  precioVenta   Decimal  @db.Decimal(12, 2) // unitario
+  precioVenta   Decimal  @db.Decimal(12, 2) // unitario, ya con la promoción aplicada
   costoUnitario Decimal  @db.Decimal(12, 2) // snapshot del costo al momento de vender
+  promocionId     String?
+  promocion       Promocion? @relation(fields: [promocionId], references: [id], onDelete: SetNull)
+  promocionNombre String?  // snapshot histórico: no cambia si luego se edita/borra la promoción
   createdAt     DateTime @default(now())
 
   pagos         PagoVenta[]
 
   @@index([productoId])
   @@index([clienteId])
+  @@index([promocionId])
   @@index([fecha])
+}
+
+// ---------- Promociones ----------
+
+model Promocion {
+  id              String    @id @default(cuid())
+  nombre          String
+  tipo            String    // "porcentaje" | "2x1"
+  valorPorcentaje Decimal?  @db.Decimal(5, 2) // solo si tipo = "porcentaje"
+  fechaDesde      DateTime?
+  fechaHasta      DateTime?
+  activa          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ventas          Venta[]
 }
 
 model PagoVenta {

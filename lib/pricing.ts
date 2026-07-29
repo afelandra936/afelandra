@@ -47,6 +47,32 @@ export function precioUnitario(
   return toNumber(costo) * ratioMedio(medio, config);
 }
 
+export type PromocionInput = {
+  tipo: string; // "porcentaje" | "2x1"
+  valorPorcentaje?: number | string | Prisma.Decimal | null;
+};
+
+/**
+ * Factor por el que se multiplica el precio total de la venta para aplicar la promoción.
+ * - Porcentaje: resta ese % del total.
+ * - 2x1: por cada par de unidades se cobra solo 1 (la más cara, pero dentro de una
+ *   misma venta todas las unidades tienen el mismo precio unitario, así que cobrar
+ *   ceil(cantidad/2) unidades al precio normal ya cobra "la más cara" de cada par).
+ *   Cantidad impar: la unidad suelta se cobra entera, sin descuento.
+ */
+export function factorPromocion(promocion: PromocionInput | null | undefined, cantidad: number): number {
+  if (!promocion) return 1;
+  if (promocion.tipo === "porcentaje") {
+    const pct = toNumber(promocion.valorPorcentaje ?? 0);
+    return 1 - pct / 100;
+  }
+  if (promocion.tipo === "2x1") {
+    if (cantidad <= 0) return 1;
+    return Math.ceil(cantidad / 2) / cantidad;
+  }
+  return 1;
+}
+
 /**
  * Cuando el pago se divide entre varios medios, cada monto ingresado "cubre"
  * una porción del costo total (monto / ratioMedio del medio). El medio "resto"

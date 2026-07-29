@@ -3,8 +3,9 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { getConfig } from "@/lib/config";
-import { precioUnitario } from "@/lib/pricing";
+import { precioUnitario, factorPromocion } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@/app/generated/prisma/client";
 
 export type PagoInput = { medio: string; monto: number };
 
@@ -18,6 +19,7 @@ export type RegistrarVentaInput = {
   clienteNombre?: string;
   observaciones?: string;
   sucursal?: string;
+  promocionId?: string;
   confirmarPerdida?: boolean;
 };
 
@@ -41,10 +43,26 @@ export async function registrarVenta(
   const config = await getConfig();
   const costoUnitario = Number(producto.costo);
 
-  const pagos: PagoInput[] =
+  let promocion: { id: string; nombre: string; tipo: string; valorPorcentaje: Prisma.Decimal | null } | null = null;
+  if (input.promocionId) {
+    const promo = await prisma.promocion.findUnique({ where: { id: input.promocionId } });
+    if (!promo) return { error: "Promoción no encontrada" };
+    const hoy = new Date();
+    const vigente =
+      promo.activa &&
+      (!promo.fechaDesde || promo.fechaDesde <= hoy) &&
+      (!promo.fechaHasta || promo.fechaHasta >= hoy);
+    if (!vigente) return { error: "La promoción elegida ya no está vigente" };
+    promocion = promo;
+  }
+
+  const pagosBase: PagoInput[] =
     input.pagos && input.pagos.length > 0
       ? input.pagos
       : [{ medio: input.medioPago, monto: precioUnitario(costoUnitario, input.medioPago, config) * input.cantidad }];
+
+  const factor = factorPromocion(promocion, input.cantidad);
+  const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor }));
 
   const precioTotal = pagos.reduce((acc, p) => acc + p.monto, 0);
   const precioVentaUnitario = precioTotal / input.cantidad;
@@ -84,6 +102,8 @@ export async function registrarVenta(
         sucursal: input.sucursal?.trim() || null,
         precioVenta: precioVentaUnitario,
         costoUnitario,
+        promocionId: promocion?.id ?? null,
+        promocionNombre: promocion?.nombre ?? null,
         pagos: { createMany: { data: pagos.map((p) => ({ medio: p.medio, monto: p.monto })) } },
       },
     }),
