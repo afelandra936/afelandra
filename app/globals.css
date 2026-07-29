@@ -1,9 +1,11 @@
 :root {
-  --bg: #3a3a3a;
+  --bg: #f0f0f0;
   --surface: #2a2a2a;
   --surface-soft: #343434;
   --ink: #f1eee9;
   --ink-soft: #aca9a2;
+  --ink-onbg: #262626;
+  --ink-onbg-soft: #5a5a5a;
   --line: #3e3e3e;
   --leaf: #ff914e;
   --leaf-dark: #e67f3a;
@@ -74,7 +76,7 @@ a {
 }
 
 .brand p {
-  color: var(--ink-soft);
+  color: var(--ink-onbg-soft);
   font-size: 13px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -247,8 +249,12 @@ header.view-head {
   flex-wrap: wrap;
 }
 
+header.view-head h1 {
+  color: var(--ink-onbg);
+}
+
 header.view-head p {
-  color: var(--ink-soft);
+  color: var(--ink-onbg-soft);
   font-size: 13px;
   margin-top: 4px;
 }
@@ -490,7 +496,7 @@ tr:last-child td {
 
 .section-title {
   font-size: 14px;
-  color: var(--ink-soft);
+  color: var(--ink-onbg-soft);
   margin: 26px 0 10px;
   text-transform: uppercase;
   letter-spacing: 0.4px;

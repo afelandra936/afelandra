@@ -44,7 +44,7 @@ export function LoginForm({
   return (
     <div id="login">
       <div className="brand">
-        <BrandMark variant="on-dark" priority />
+        <BrandMark variant="on-light" priority />
         <p>Gestión</p>
       </div>
 
