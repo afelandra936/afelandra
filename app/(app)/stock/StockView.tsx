@@ -126,7 +126,6 @@ export function StockView(props: Props) {
                 <th>Código</th>
                 {isAdmin && <th>Costo</th>}
                 <th>Stock</th>
-                <th>Mín.</th>
                 <th></th>
               </tr>
             </thead>
@@ -168,7 +167,6 @@ function ProductoRow({
   const [codigo, setCodigo] = useState(producto.codigo ?? "");
   const [costo, setCosto] = useState(String(producto.costo));
   const [stock, setStock] = useState(String(producto.stock));
-  const [stockMin, setStockMin] = useState(String(producto.stockMin));
   const [sumando, setSumando] = useState(false);
   const [cantidadASumar, setCantidadASumar] = useState("1");
   const [error, setError] = useState<string | null>(null);
@@ -254,7 +252,7 @@ function ProductoRow({
             value={costo}
             onChange={(e) => setCosto(e.target.value)}
             onBlur={() => Number(costo) !== producto.costo && commit("costo", Number(costo))}
-            style={{ width: 70 }}
+            style={{ width: 100 }}
             disabled={pending}
           />
         </td>
@@ -289,21 +287,6 @@ function ProductoRow({
           <span className={`num ${esAgotado(producto) ? "out-stock" : esStockBajo(producto) ? "low-stock" : ""}`}>
             {esAgotado(producto) ? "Agotado" : producto.stock}
           </span>
-        )}
-      </td>
-      <td>
-        {isAdmin ? (
-          <input
-            className="num"
-            type="number"
-            value={stockMin}
-            onChange={(e) => setStockMin(e.target.value)}
-            onBlur={() => Number(stockMin) !== producto.stockMin && commit("stockMin", Number(stockMin))}
-            style={{ width: 45 }}
-            disabled={pending}
-          />
-        ) : (
-          <span className="num">{producto.stockMin}</span>
         )}
       </td>
       <td>
