@@ -2,9 +2,63 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { toNumber } from "@/lib/format";
 import { revalidatePath } from "next/cache";
 
 type TalleInput = { talle: string; stock: number; codigo?: string };
+
+export type ProductoBusqueda = {
+  id: string;
+  nombre: string;
+  talle: string;
+  marca: string;
+  costo: number;
+  stock: number;
+  codigo: string | null;
+};
+
+function aBusqueda(p: {
+  id: string;
+  nombre: string;
+  talle: string;
+  marca: string;
+  costo: unknown;
+  stock: number;
+  codigo: string | null;
+}): ProductoBusqueda {
+  return {
+    id: p.id,
+    nombre: p.nombre,
+    talle: p.talle,
+    marca: p.marca,
+    costo: toNumber(p.costo as never),
+    stock: p.stock,
+    codigo: p.codigo,
+  };
+}
+
+/** Búsqueda server-side para el autocompletado de Ventas: no manda el catálogo entero al cliente. */
+export async function buscarProductos(query: string): Promise<ProductoBusqueda[]> {
+  await requireRole("admin", "empleada");
+  const q = query.trim();
+  if (!q) return [];
+
+  const productos = await prisma.producto.findMany({
+    where: { nombre: { contains: q, mode: "insensitive" }, stock: { gt: 0 } },
+    orderBy: { nombre: "asc" },
+    take: 15,
+  });
+  return productos.map(aBusqueda);
+}
+
+export async function buscarProductoPorCodigo(codigo: string): Promise<ProductoBusqueda | null> {
+  await requireRole("admin", "empleada");
+  const c = codigo.trim();
+  if (!c) return null;
+
+  const producto = await prisma.producto.findUnique({ where: { codigo: c } });
+  return producto ? aBusqueda(producto) : null;
+}
 
 export async function crearProducto(data: {
   nombre: string;
@@ -60,22 +114,32 @@ export async function crearProducto(data: {
 export async function actualizarProducto(
   id: string,
   data: Partial<{
+    nombre: string;
+    tipo: string;
     marca: string;
     color: string;
+    talle: string;
     codigo: string | null;
     costo: number;
     stock: number;
     stockMin: number;
+    observaciones: string | null;
   }>
 ) {
   await requireRole("admin");
 
+  if (data.nombre !== undefined && !data.nombre.trim()) {
+    throw new Error("El nombre es obligatorio");
+  }
   if (data.codigo) {
     const existente = await prisma.producto.findFirst({ where: { codigo: data.codigo, NOT: { id } } });
     if (existente) throw new Error(`El código ${data.codigo} ya está en uso`);
   }
 
-  await prisma.producto.update({ where: { id }, data });
+  await prisma.producto.update({
+    where: { id },
+    data: { ...data, nombre: data.nombre?.trim(), talle: data.talle === "Único" ? "" : data.talle },
+  });
   revalidatePath("/stock");
 }
 

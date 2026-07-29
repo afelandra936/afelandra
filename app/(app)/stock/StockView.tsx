@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { IconTrash, IconPlus, IconCopy } from "@tabler/icons-react";
+import { IconTrash, IconPlus, IconCopy, IconPencil } from "@tabler/icons-react";
 import { fmt } from "@/lib/format";
 import { esAgotado, esStockBajo } from "@/lib/stock";
 import {
@@ -24,6 +24,7 @@ type ProductoDTO = {
   stock: number;
   stockMin: number;
   codigo: string | null;
+  observaciones: string | null;
 };
 
 type Props = {
@@ -42,6 +43,19 @@ export function StockView(props: Props) {
   const isAdmin = role === "admin";
   const [showForm, setShowForm] = useState(false);
   const [seed, setSeed] = useState<ProductoDTO | null>(null);
+  const [busqueda, setBusqueda] = useState("");
+
+  const productosFiltrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return productos;
+    return productos.filter(
+      (p) =>
+        p.nombre.toLowerCase().includes(q) ||
+        p.marca.toLowerCase().includes(q) ||
+        p.color.toLowerCase().includes(q) ||
+        p.talle.toLowerCase().includes(q)
+    );
+  }, [productos, busqueda]);
 
   function abrirNuevo() {
     setSeed(null);
@@ -111,9 +125,21 @@ export function StockView(props: Props) {
         </div>
       )}
 
+      {productos.length > 0 && (
+        <div className="field" style={{ maxWidth: 320, marginBottom: 12 }}>
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre, marca, color o talle..."
+          />
+        </div>
+      )}
+
       <div className="card">
         {productos.length === 0 ? (
           <p className="empty">Todavía no cargaste productos.</p>
+        ) : productosFiltrados.length === 0 ? (
+          <p className="empty">No se encontraron productos para &quot;{busqueda}&quot;.</p>
         ) : (
           <table>
             <thead>
@@ -126,11 +152,12 @@ export function StockView(props: Props) {
                 <th>Código</th>
                 {isAdmin && <th>Costo</th>}
                 <th>Stock</th>
+                <th>Observaciones</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {productos.map((p) => (
+              {productosFiltrados.map((p) => (
                 <ProductoRow
                   key={p.id}
                   producto={p}
@@ -138,6 +165,8 @@ export function StockView(props: Props) {
                   esAccesorio={tiposAccesorioSet.has(p.tipo)}
                   sinMovimiento={p.stock > 0 && sinMovimientoSet.has(p.id)}
                   onDuplicate={abrirDuplicado}
+                  tiposCalzado={props.tiposCalzado}
+                  tiposAccesorio={props.tiposAccesorio}
                 />
               ))}
             </tbody>
@@ -154,14 +183,19 @@ function ProductoRow({
   esAccesorio,
   sinMovimiento,
   onDuplicate,
+  tiposCalzado,
+  tiposAccesorio,
 }: {
   producto: ProductoDTO;
   role: Role;
   esAccesorio: boolean;
   sinMovimiento: boolean;
   onDuplicate: (producto: ProductoDTO) => void;
+  tiposCalzado: string[];
+  tiposAccesorio: string[];
 }) {
   const isAdmin = role === "admin";
+  const [editing, setEditing] = useState(false);
   const [marca, setMarca] = useState(producto.marca);
   const [color, setColor] = useState(producto.color);
   const [codigo, setCodigo] = useState(producto.codigo ?? "");
@@ -207,6 +241,18 @@ function ProductoRow({
         setError(e instanceof Error ? e.message : "Error");
       }
     });
+  }
+
+  if (editing) {
+    return (
+      <EditProductoRow
+        producto={producto}
+        tiposCalzado={tiposCalzado}
+        tiposAccesorio={tiposAccesorio}
+        onDone={() => setEditing(false)}
+        onCancel={() => setEditing(false)}
+      />
+    );
   }
 
   return (
@@ -289,9 +335,15 @@ function ProductoRow({
           </span>
         )}
       </td>
+      <td className="hint" style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={producto.observaciones ?? undefined}>
+        {producto.observaciones ?? "—"}
+      </td>
       <td>
         {isAdmin ? (
           <span style={{ display: "flex", gap: 6 }}>
+            <button className="btn ghost small" type="button" onClick={() => setEditing(true)} disabled={pending} title="Editar">
+              <IconPencil size={14} />
+            </button>
             <button className="btn ghost small" type="button" onClick={() => onDuplicate(producto)} disabled={pending} title="Duplicar">
               <IconCopy size={14} />
             </button>
@@ -308,6 +360,110 @@ function ProductoRow({
         )}
         {error && <div style={{ color: "var(--danger)", fontSize: 11, marginTop: 4 }}>{error}</div>}
         {sinMovimiento && isAdmin && <div className="hint">Sin movimiento</div>}
+      </td>
+    </tr>
+  );
+}
+
+function EditProductoRow({
+  producto,
+  tiposCalzado,
+  tiposAccesorio,
+  onDone,
+  onCancel,
+}: {
+  producto: ProductoDTO;
+  tiposCalzado: string[];
+  tiposAccesorio: string[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [nombre, setNombre] = useState(producto.nombre);
+  const [tipo, setTipo] = useState(producto.tipo);
+  const [marca, setMarca] = useState(producto.marca);
+  const [color, setColor] = useState(producto.color);
+  const [talle, setTalle] = useState(producto.talle || "Único");
+  const [codigo, setCodigo] = useState(producto.codigo ?? "");
+  const [costo, setCosto] = useState(String(producto.costo));
+  const [stock, setStock] = useState(String(producto.stock));
+  const [observaciones, setObservaciones] = useState(producto.observaciones ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      try {
+        await actualizarProducto(producto.id, {
+          nombre,
+          tipo,
+          marca,
+          color,
+          talle,
+          codigo: codigo || null,
+          costo: Number(costo),
+          stock: Number(stock),
+          observaciones: observaciones.trim() || null,
+        });
+        onDone();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al guardar");
+      }
+    });
+  }
+
+  return (
+    <tr>
+      <td colSpan={10}>
+        <form className="inline-form" onSubmit={handleSubmit} style={{ marginBottom: 0 }}>
+          <div className="field">
+            <label htmlFor={`ep-nombre-${producto.id}`}>Nombre</label>
+            <input id={`ep-nombre-${producto.id}`} value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-tipo-${producto.id}`}>Tipo</label>
+            <select id={`ep-tipo-${producto.id}`} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <optgroup label="Calzado">
+                {tiposCalzado.map((t) => <option key={t} value={t}>{t}</option>)}
+              </optgroup>
+              <optgroup label="Accesorios">
+                {tiposAccesorio.map((t) => <option key={t} value={t}>{t}</option>)}
+              </optgroup>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-marca-${producto.id}`}>Marca</label>
+            <input id={`ep-marca-${producto.id}`} value={marca} onChange={(e) => setMarca(e.target.value)} style={{ width: 90 }} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-color-${producto.id}`}>Color</label>
+            <input id={`ep-color-${producto.id}`} value={color} onChange={(e) => setColor(e.target.value)} style={{ width: 80 }} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-talle-${producto.id}`}>Talle</label>
+            <input id={`ep-talle-${producto.id}`} value={talle} onChange={(e) => setTalle(e.target.value)} style={{ width: 70 }} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-codigo-${producto.id}`}>Código</label>
+            <input id={`ep-codigo-${producto.id}`} value={codigo} onChange={(e) => setCodigo(e.target.value)} style={{ width: 100 }} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-costo-${producto.id}`}>Costo</label>
+            <input id={`ep-costo-${producto.id}`} type="number" step="0.01" min="0" value={costo} onChange={(e) => setCosto(e.target.value)} style={{ width: 100 }} required />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-stock-${producto.id}`}>Stock</label>
+            <input id={`ep-stock-${producto.id}`} type="number" min="0" value={stock} onChange={(e) => setStock(e.target.value)} style={{ width: 70 }} required />
+          </div>
+          <div className="field" style={{ minWidth: 200 }}>
+            <label htmlFor={`ep-obs-${producto.id}`}>Observaciones</label>
+            <input id={`ep-obs-${producto.id}`} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
+          </div>
+          {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
+          <button className="btn" type="submit" disabled={pending}>Guardar</button>
+          <button className="btn ghost" type="button" onClick={onCancel} disabled={pending}>Cancelar</button>
+        </form>
       </td>
     </tr>
   );

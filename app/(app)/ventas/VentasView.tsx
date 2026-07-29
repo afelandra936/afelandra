@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, calcularMontoResto, factorPromocion } from "@/lib/pricing";
 import { registrarVenta, eliminarVenta } from "@/lib/actions/ventas";
+import { buscarProductos, buscarProductoPorCodigo } from "@/lib/actions/productos";
 import { BarChart } from "@/components/charts/BarChart";
 import type { Role } from "@/lib/auth";
 import type { ChartEntry } from "@/lib/reports";
@@ -43,7 +44,6 @@ type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: 
 
 type Props = {
   role: Role;
-  productos: ProductoDTO[];
   ventas: VentaDTO[];
   clientesNombres: string[];
   config: ConfigDTO;
@@ -155,11 +155,15 @@ function labelProducto(p: ProductoDTO): string {
 }
 
 function NuevaVentaForm(props: Props) {
-  const { productos, config } = props;
+  const { config } = props;
 
   const [codigoBarras, setCodigoBarras] = useState("");
   const [productoId, setProductoId] = useState("");
+  const [selectedProducto, setSelectedProducto] = useState<ProductoDTO | null>(null);
   const [productoQuery, setProductoQuery] = useState("");
+  const [sugerencias, setSugerencias] = useState<ProductoDTO[]>([]);
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+  const [buscando, setBuscando] = useState(false);
   const [cantidad, setCantidad] = useState("1");
   const [medioPago, setMedioPago] = useState<string>(MEDIOS[0]);
   const [dividido, setDividido] = useState(false);
@@ -174,10 +178,37 @@ function NuevaVentaForm(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const producto = useMemo(() => productos.find((p) => p.id === productoId) ?? null, [productos, productoId]);
-  const productosDisponibles = useMemo(() => productos.filter((p) => p.stock > 0), [productos]);
+  const producto = selectedProducto;
   const cantidadNum = Number(cantidad) || 0;
   const costoTotal = producto ? producto.costo * cantidadNum : 0;
+
+  useEffect(() => {
+    if (selectedProducto && productoQuery === labelProducto(selectedProducto)) {
+      setSugerencias([]);
+      return;
+    }
+    if (!productoQuery.trim()) {
+      setSugerencias([]);
+      setBuscando(false);
+      return;
+    }
+    setBuscando(true);
+    const timer = setTimeout(async () => {
+      const resultados = await buscarProductos(productoQuery);
+      setSugerencias(resultados);
+      setBuscando(false);
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productoQuery]);
+
+  function elegirProducto(p: ProductoDTO) {
+    setSelectedProducto(p);
+    setProductoId(p.id);
+    setProductoQuery(labelProducto(p));
+    setSugerencias([]);
+    setMostrarSugerencias(false);
+  }
   const promocion = useMemo(
     () => props.promociones.find((p) => p.id === promocionId) ?? null,
     [props.promociones, promocionId]
@@ -198,12 +229,15 @@ function NuevaVentaForm(props: Props) {
   function handleBarcode(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    const match = productos.find((p) => p.codigo === codigoBarras.trim());
-    if (match) {
-      setProductoId(match.id);
-      setProductoQuery(labelProducto(match));
-      setCodigoBarras("");
-    }
+    const codigo = codigoBarras.trim();
+    if (!codigo) return;
+    startTransition(async () => {
+      const match = await buscarProductoPorCodigo(codigo);
+      if (match) {
+        elegirProducto(match);
+        setCodigoBarras("");
+      }
+    });
   }
 
   function addPagoParcial() {
@@ -258,7 +292,9 @@ function NuevaVentaForm(props: Props) {
       }
 
       setProductoId("");
+      setSelectedProducto(null);
       setProductoQuery("");
+      setSugerencias([]);
       setCantidad("1");
       setDividido(false);
       setPagosParciales([]);
@@ -285,27 +321,39 @@ function NuevaVentaForm(props: Props) {
           placeholder="Escanear y Enter"
         />
       </div>
-      <div className="field" style={{ minWidth: 240 }}>
+      <div className="field" style={{ minWidth: 240, position: "relative" }}>
         <label htmlFor="v-producto">Producto</label>
         <input
           id="v-producto"
-          list="v-productos-list"
           placeholder="Buscar por nombre..."
           autoComplete="off"
           value={productoQuery}
           onChange={(e) => {
             const texto = e.target.value;
             setProductoQuery(texto);
-            const match = productosDisponibles.find((p) => labelProducto(p) === texto);
-            setProductoId(match ? match.id : "");
+            setMostrarSugerencias(true);
+            if (selectedProducto && texto !== labelProducto(selectedProducto)) {
+              setSelectedProducto(null);
+              setProductoId("");
+            }
           }}
+          onFocus={() => setMostrarSugerencias(true)}
+          onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
           required
         />
-        <datalist id="v-productos-list">
-          {productosDisponibles.map((p) => (
-            <option key={p.id} value={labelProducto(p)} />
-          ))}
-        </datalist>
+        {mostrarSugerencias && (buscando || sugerencias.length > 0) && (
+          <ul className="autocomplete-list">
+            {buscando ? (
+              <li className="autocomplete-hint">Buscando...</li>
+            ) : (
+              sugerencias.map((p) => (
+                <li key={p.id} onMouseDown={(e) => { e.preventDefault(); elegirProducto(p); }}>
+                  {labelProducto(p)}
+                </li>
+              ))
+            )}
+          </ul>
+        )}
       </div>
       <div className="field">
         <label htmlFor="v-cantidad">Cantidad</label>

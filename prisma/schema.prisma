@@ -25,6 +25,7 @@ model Producto {
   stock      Int      @default(0)
   stockMin   Int      @default(2)
   codigo     String?  @unique
+  observaciones String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
