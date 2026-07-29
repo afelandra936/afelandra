@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { IconTrash } from "@tabler/icons-react";
+import { IconTrash, IconPencil } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import {
   crearProveedor,
+  actualizarProveedor,
   eliminarProveedor,
   crearRemito,
   eliminarRemito,
@@ -25,6 +26,8 @@ type ProveedorDTO = {
   contacto: string | null;
   formaPago: string | null;
   plazo: string | null;
+  ultimaCompra: string | null;
+  deudaInicial: number;
   remitos: RemitoDTO[];
   pagos: PagoDTO[];
   facturado: number;
@@ -61,6 +64,7 @@ export function ProveedoresView({
             <thead>
               <tr>
                 <th>Proveedor</th>
+                <th>Marca</th>
                 <th>Contacto</th>
                 <th>Forma de pago</th>
                 <th>Facturado</th>
@@ -105,6 +109,7 @@ export function ProveedoresView({
 }
 
 function ProveedorRow({ proveedor }: { proveedor: ProveedorDTO }) {
+  const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -120,18 +125,116 @@ function ProveedorRow({ proveedor }: { proveedor: ProveedorDTO }) {
     });
   }
 
+  if (editing) {
+    return <EditProveedorRow proveedor={proveedor} onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />;
+  }
+
   return (
     <tr>
       <td>{proveedor.nombre}</td>
+      <td>{proveedor.marca ?? "—"}</td>
       <td>{proveedor.contacto ?? "—"}</td>
       <td>{proveedor.formaPago ?? "—"}</td>
       <td className="num">{fmt(proveedor.facturado)}</td>
       <td className={`num ${proveedor.debe > 0 ? "low-stock" : ""}`}>{fmt(proveedor.debe)}</td>
       <td>
-        <button className="btn danger small" type="button" onClick={handleDelete} disabled={pending}>
-          <IconTrash size={14} />
-        </button>
+        <span style={{ display: "flex", gap: 6 }}>
+          <button className="btn ghost small" type="button" onClick={() => setEditing(true)} disabled={pending}>
+            <IconPencil size={14} />
+          </button>
+          <button className="btn danger small" type="button" onClick={handleDelete} disabled={pending}>
+            <IconTrash size={14} />
+          </button>
+        </span>
         {error && <div style={{ color: "var(--danger)", fontSize: 11 }}>{error}</div>}
+      </td>
+    </tr>
+  );
+}
+
+function EditProveedorRow({
+  proveedor,
+  onDone,
+  onCancel,
+}: {
+  proveedor: ProveedorDTO;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [nombre, setNombre] = useState(proveedor.nombre);
+  const [marca, setMarca] = useState(proveedor.marca ?? "");
+  const [contacto, setContacto] = useState(proveedor.contacto ?? "");
+  const [formaPago, setFormaPago] = useState(proveedor.formaPago ?? "");
+  const [plazo, setPlazo] = useState(proveedor.plazo ?? "");
+  const [ultimaCompra, setUltimaCompra] = useState(proveedor.ultimaCompra?.slice(0, 10) ?? "");
+  const [deudaInicial, setDeudaInicial] = useState(String(proveedor.deudaInicial));
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      try {
+        await actualizarProveedor(proveedor.id, {
+          nombre,
+          marca,
+          contacto,
+          formaPago,
+          plazo,
+          ultimaCompra: ultimaCompra || undefined,
+          deudaInicial: Number(deudaInicial) || 0,
+        });
+        onDone();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al guardar");
+      }
+    });
+  }
+
+  return (
+    <tr>
+      <td colSpan={7}>
+        <form className="inline-form" onSubmit={handleSubmit} style={{ marginBottom: 0 }}>
+          <div className="field">
+            <label htmlFor={`ep-nombre-${proveedor.id}`}>Nombre</label>
+            <input id={`ep-nombre-${proveedor.id}`} value={nombre} onChange={(e) => setNombre(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-marca-${proveedor.id}`}>Marca</label>
+            <input id={`ep-marca-${proveedor.id}`} value={marca} onChange={(e) => setMarca(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-contacto-${proveedor.id}`}>Contacto</label>
+            <input id={`ep-contacto-${proveedor.id}`} value={contacto} onChange={(e) => setContacto(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-forma-${proveedor.id}`}>Forma de pago</label>
+            <input id={`ep-forma-${proveedor.id}`} value={formaPago} onChange={(e) => setFormaPago(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-plazo-${proveedor.id}`}>Plazo</label>
+            <input id={`ep-plazo-${proveedor.id}`} value={plazo} onChange={(e) => setPlazo(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-ultima-${proveedor.id}`}>Última compra</label>
+            <input id={`ep-ultima-${proveedor.id}`} type="date" value={ultimaCompra} onChange={(e) => setUltimaCompra(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`ep-deuda-${proveedor.id}`}>Deuda inicial</label>
+            <input
+              id={`ep-deuda-${proveedor.id}`}
+              type="number"
+              step="0.01"
+              value={deudaInicial}
+              onChange={(e) => setDeudaInicial(e.target.value)}
+              style={{ width: 110 }}
+            />
+          </div>
+          {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
+          <button className="btn" type="submit" disabled={pending}>Guardar</button>
+          <button className="btn ghost" type="button" onClick={onCancel} disabled={pending}>Cancelar</button>
+        </form>
       </td>
     </tr>
   );

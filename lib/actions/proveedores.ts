@@ -34,6 +34,41 @@ export async function crearProveedor(data: {
   revalidateProveedores();
 }
 
+export async function actualizarProveedor(
+  id: string,
+  data: {
+    nombre: string;
+    marca?: string;
+    contacto?: string;
+    formaPago?: string;
+    plazo?: string;
+    ultimaCompra?: string;
+    deudaInicial?: number;
+  }
+) {
+  await requireRole("admin");
+  if (!data.nombre.trim()) throw new Error("El nombre es obligatorio");
+
+  const existente = await prisma.proveedor.findFirst({
+    where: { nombre: { equals: data.nombre.trim(), mode: "insensitive" }, NOT: { id } },
+  });
+  if (existente) throw new Error(`Ya existe un proveedor llamado "${data.nombre.trim()}"`);
+
+  await prisma.proveedor.update({
+    where: { id },
+    data: {
+      nombre: data.nombre.trim(),
+      marca: data.marca?.trim() || null,
+      contacto: data.contacto?.trim() || null,
+      formaPago: data.formaPago?.trim() || null,
+      plazo: data.plazo?.trim() || null,
+      ultimaCompra: data.ultimaCompra ? new Date(data.ultimaCompra) : null,
+      deudaInicial: data.deudaInicial ?? 0,
+    },
+  });
+  revalidateProveedores();
+}
+
 export async function eliminarProveedor(id: string) {
   await requireRole("admin");
   try {
