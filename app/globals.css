@@ -692,3 +692,26 @@ tr:last-child td {
     padding: 20px;
   }
 }
+
+@media print {
+  .sidebar,
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: inline !important;
+  }
+
+  body,
+  main {
+    background: #fff;
+    color: #000;
+  }
+
+  .card {
+    border: 1px solid #999;
+    background: #fff;
+    color: #000;
+  }
+}

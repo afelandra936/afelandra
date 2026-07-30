@@ -7,69 +7,41 @@ import { precioUnitario, factorPromocion } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@/app/generated/prisma/client";
 
-export type PagoInput = { medio: string; monto: number };
-
-export type RegistrarVentaInput = {
-  fecha: string; // YYYY-MM-DD
-  productoId: string;
-  cantidad: number;
-  medioPago: string;
-  pagos?: PagoInput[]; // si hay más de uno, el pago fue dividido
-  vendedor: string;
-  clienteNombre?: string;
-  observaciones?: string;
-  sucursal?: string;
-  promocionId?: string;
-  confirmarPerdida?: boolean;
-};
-
 function revalidateAfterVenta() {
   for (const path of ["/ventas", "/stock", "/resumen", "/rentabilidad", "/clientes"]) {
     revalidatePath(path);
   }
 }
 
-export async function registrarVenta(
-  input: RegistrarVentaInput
+export type ItemCarrito = {
+  productoId: string;
+  cantidad: number;
+  medioPago: string;
+  promocionId?: string;
+};
+
+export type RegistrarVentaCarritoInput = {
+  fecha: string;
+  vendedor: string;
+  clienteNombre?: string;
+  observaciones?: string;
+  sucursal?: string;
+  items: ItemCarrito[];
+  confirmarPerdida?: boolean;
+};
+
+export async function registrarVentaCarrito(
+  input: RegistrarVentaCarritoInput
 ): Promise<{ error?: string; warning?: string } | void> {
   await requireRole("admin", "empleada");
 
   if (!input.vendedor.trim()) return { error: "El vendedor es obligatorio" };
-  if (!(input.cantidad > 0)) return { error: "Cantidad inválida" };
-
-  const producto = await prisma.producto.findUnique({ where: { id: input.productoId } });
-  if (!producto) return { error: "Producto no encontrado" };
+  if (input.items.length === 0) return { error: "Agregá al menos un producto" };
+  for (const item of input.items) {
+    if (!(item.cantidad > 0)) return { error: "Cantidad inválida" };
+  }
 
   const config = await getConfig();
-  const costoUnitario = Number(producto.costo);
-
-  let promocion: { id: string; nombre: string; tipo: string; valorPorcentaje: Prisma.Decimal | null } | null = null;
-  if (input.promocionId) {
-    const promo = await prisma.promocion.findUnique({ where: { id: input.promocionId } });
-    if (!promo) return { error: "Promoción no encontrada" };
-    const hoy = new Date();
-    const vigente =
-      promo.activa &&
-      (!promo.fechaDesde || promo.fechaDesde <= hoy) &&
-      (!promo.fechaHasta || promo.fechaHasta >= hoy);
-    if (!vigente) return { error: "La promoción elegida ya no está vigente" };
-    promocion = promo;
-  }
-
-  const pagosBase: PagoInput[] =
-    input.pagos && input.pagos.length > 0
-      ? input.pagos
-      : [{ medio: input.medioPago, monto: precioUnitario(costoUnitario, input.medioPago, config) * input.cantidad }];
-
-  const factor = factorPromocion(promocion, input.cantidad);
-  const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor }));
-
-  const precioTotal = pagos.reduce((acc, p) => acc + p.monto, 0);
-  const precioVentaUnitario = precioTotal / input.cantidad;
-
-  if (precioVentaUnitario < costoUnitario && !input.confirmarPerdida) {
-    return { warning: "El precio de venta es menor al costo. ¿Confirmás igual?" };
-  }
 
   let clienteId: string | null = null;
   const clienteNombre = input.clienteNombre?.trim() || null;
@@ -80,37 +52,77 @@ export async function registrarVenta(
     if (match) clienteId = match.id;
   }
 
-  const medioPagoFinal = pagos.length > 1 ? "Dividido" : pagos[0].medio;
+  const hoy = new Date();
+  const preparados: {
+    data: Prisma.VentaCreateInput;
+    productoId: string;
+    stockRestante: number;
+  }[] = [];
+  const perdidas: string[] = [];
 
-  await prisma.$transaction([
-    prisma.venta.create({
+  for (const item of input.items) {
+    const producto = await prisma.producto.findUnique({ where: { id: item.productoId } });
+    if (!producto) return { error: "Un producto del carrito ya no existe" };
+
+    let promocion: { id: string; nombre: string; tipo: string; valorPorcentaje: Prisma.Decimal | null } | null = null;
+    if (item.promocionId) {
+      const promo = await prisma.promocion.findUnique({ where: { id: item.promocionId } });
+      if (!promo) return { error: "Promoción no encontrada" };
+      const vigente =
+        promo.activa &&
+        (!promo.fechaDesde || promo.fechaDesde <= hoy) &&
+        (!promo.fechaHasta || promo.fechaHasta >= hoy);
+      if (!vigente) return { error: `La promoción de "${producto.nombre}" ya no está vigente` };
+      promocion = promo;
+    }
+
+    const costoUnitario = Number(producto.costo);
+    const factor = factorPromocion(promocion, item.cantidad);
+    const precioVentaUnitario = precioUnitario(costoUnitario, item.medioPago, config) * factor;
+
+    if (precioVentaUnitario < costoUnitario) {
+      perdidas.push(`${producto.nombre} (talle ${producto.talle || "Único"})`);
+    }
+
+    const proveedorNombre = producto.proveedorId
+      ? (await prisma.proveedor.findUnique({ where: { id: producto.proveedorId } }))?.nombre ?? null
+      : null;
+
+    preparados.push({
+      productoId: producto.id,
+      stockRestante: Math.max(0, producto.stock - item.cantidad),
       data: {
         fecha: new Date(`${input.fecha}T12:00:00`),
-        productoId: producto.id,
+        producto: { connect: { id: producto.id } },
         nombre: producto.nombre,
         tipo: producto.tipo,
-        proveedor: producto.proveedorId
-          ? (await prisma.proveedor.findUnique({ where: { id: producto.proveedorId } }))?.nombre
-          : null,
+        proveedor: proveedorNombre,
         talle: producto.talle,
-        cantidad: input.cantidad,
-        medioPago: medioPagoFinal,
+        cantidad: item.cantidad,
+        medioPago: item.medioPago,
         vendedor: input.vendedor.trim(),
-        clienteId,
+        cliente: clienteId ? { connect: { id: clienteId } } : undefined,
         clienteNombre,
         observaciones: input.observaciones?.trim() || null,
         sucursal: input.sucursal?.trim() || null,
         precioVenta: precioVentaUnitario,
         costoUnitario,
-        promocionId: promocion?.id ?? null,
+        promocion: promocion ? { connect: { id: promocion.id } } : undefined,
         promocionNombre: promocion?.nombre ?? null,
-        pagos: { createMany: { data: pagos.map((p) => ({ medio: p.medio, monto: p.monto })) } },
+        pagos: { create: { medio: item.medioPago, monto: precioVentaUnitario * item.cantidad } },
       },
-    }),
-    prisma.producto.update({
-      where: { id: producto.id },
-      data: { stock: Math.max(0, producto.stock - input.cantidad) },
-    }),
+    });
+  }
+
+  if (perdidas.length > 0 && !input.confirmarPerdida) {
+    return {
+      warning: `Se venden por debajo del costo: ${perdidas.join(", ")}. ¿Confirmás igual?`,
+    };
+  }
+
+  await prisma.$transaction([
+    ...preparados.map((p) => prisma.venta.create({ data: p.data })),
+    ...preparados.map((p) => prisma.producto.update({ where: { id: p.productoId }, data: { stock: p.stockRestante } })),
   ]);
 
   revalidateAfterVenta();

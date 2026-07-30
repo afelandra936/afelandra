@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
-import { MEDIOS, precioUnitario, calcularMontoResto, factorPromocion } from "@/lib/pricing";
-import { registrarVenta, eliminarVenta } from "@/lib/actions/ventas";
+import { MEDIOS, precioUnitario, factorPromocion } from "@/lib/pricing";
+import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
 import { buscarProductos, buscarProductoPorCodigo } from "@/lib/actions/productos";
 import { BarChart } from "@/components/charts/BarChart";
 import type { Role } from "@/lib/auth";
@@ -59,7 +59,7 @@ export function VentasView(props: Props) {
       <header className="view-head">
         <div>
           <h1>Ventas</h1>
-          <p>Elegí el producto y el medio de pago: el precio se calcula solo.</p>
+          <p>Armá el carrito con uno o varios productos: el precio se calcula solo.</p>
         </div>
       </header>
 
@@ -154,77 +154,66 @@ function labelProducto(p: ProductoDTO): string {
   return `${p.nombre} ${p.talle ? `(${p.talle})` : "(Único)"} — ${p.marca} — stock ${p.stock}`;
 }
 
+type CartItem = {
+  id: string;
+  producto: ProductoDTO | null;
+  productoQuery: string;
+  cantidad: string;
+  medioPago: string;
+  promocionId: string;
+};
+
+function nuevoItem(): CartItem {
+  return {
+    id: Math.random().toString(36).slice(2),
+    producto: null,
+    productoQuery: "",
+    cantidad: "1",
+    medioPago: MEDIOS[0],
+    promocionId: "",
+  };
+}
+
+function totalItem(item: CartItem, config: ConfigDTO, promociones: PromocionDTO[]): number {
+  if (!item.producto) return 0;
+  const cantidad = Number(item.cantidad) || 0;
+  const base = precioUnitario(item.producto.costo, item.medioPago, config) * cantidad;
+  const promocion = promociones.find((p) => p.id === item.promocionId) ?? null;
+  return base * factorPromocion(promocion, cantidad);
+}
+
 function NuevaVentaForm(props: Props) {
   const { config } = props;
 
   const [codigoBarras, setCodigoBarras] = useState("");
-  const [productoId, setProductoId] = useState("");
-  const [selectedProducto, setSelectedProducto] = useState<ProductoDTO | null>(null);
-  const [productoQuery, setProductoQuery] = useState("");
-  const [sugerencias, setSugerencias] = useState<ProductoDTO[]>([]);
-  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
-  const [buscando, setBuscando] = useState(false);
-  const [cantidad, setCantidad] = useState("1");
-  const [medioPago, setMedioPago] = useState<string>(MEDIOS[0]);
-  const [dividido, setDividido] = useState(false);
-  const [pagosParciales, setPagosParciales] = useState<{ medio: string; monto: string }[]>([]);
-  const [medioResto, setMedioResto] = useState<string>(MEDIOS[0]);
+  const [items, setItems] = useState<CartItem[]>([nuevoItem()]);
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
   const [vendedor, setVendedor] = useState("");
   const [clienteNombre, setClienteNombre] = useState("");
   const [sucursal, setSucursal] = useState("");
   const [observaciones, setObservaciones] = useState("");
-  const [promocionId, setPromocionId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const producto = selectedProducto;
-  const cantidadNum = Number(cantidad) || 0;
-  const costoTotal = producto ? producto.costo * cantidadNum : 0;
+  const total = items.reduce((acc, item) => acc + totalItem(item, config, props.promociones), 0);
 
-  useEffect(() => {
-    if (selectedProducto && productoQuery === labelProducto(selectedProducto)) {
-      setSugerencias([]);
-      return;
-    }
-    if (!productoQuery.trim()) {
-      setSugerencias([]);
-      setBuscando(false);
-      return;
-    }
-    setBuscando(true);
-    const timer = setTimeout(async () => {
-      const resultados = await buscarProductos(productoQuery);
-      setSugerencias(resultados);
-      setBuscando(false);
-    }, 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productoQuery]);
-
-  function elegirProducto(p: ProductoDTO) {
-    setSelectedProducto(p);
-    setProductoId(p.id);
-    setProductoQuery(labelProducto(p));
-    setSugerencias([]);
-    setMostrarSugerencias(false);
+  function updateItem(id: string, patch: Partial<CartItem>) {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
   }
-  const promocion = useMemo(
-    () => props.promociones.find((p) => p.id === promocionId) ?? null,
-    [props.promociones, promocionId]
-  );
-  const factor = factorPromocion(promocion, cantidadNum);
 
-  const precioSimple = producto ? precioUnitario(producto.costo, medioPago, config) * cantidadNum : 0;
+  function removeItem(id: string) {
+    setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.id !== id) : prev));
+  }
 
-  const montoResto = useMemo(() => {
-    if (!producto) return 0;
-    const pagosNum = pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 }));
-    return calcularMontoResto(costoTotal, pagosNum, medioResto, config);
-  }, [producto, pagosParciales, medioResto, costoTotal, config]);
-
-  const totalDividido = pagosParciales.reduce((acc, p) => acc + (Number(p.monto) || 0), 0) + montoResto;
-  const totalConPromo = (dividido ? totalDividido : precioSimple) * factor;
+  function agregarProductoAlCarrito(p: ProductoDTO) {
+    setItems((prev) => {
+      const ultimo = prev[prev.length - 1];
+      if (ultimo && !ultimo.producto) {
+        return prev.map((it, i) => (i === prev.length - 1 ? { ...it, producto: p, productoQuery: labelProducto(p) } : it));
+      }
+      return [...prev, { ...nuevoItem(), producto: p, productoQuery: labelProducto(p) }];
+    });
+  }
 
   function handleBarcode(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
@@ -234,51 +223,39 @@ function NuevaVentaForm(props: Props) {
     startTransition(async () => {
       const match = await buscarProductoPorCodigo(codigo);
       if (match) {
-        elegirProducto(match);
+        agregarProductoAlCarrito(match);
         setCodigoBarras("");
       }
     });
   }
 
-  function addPagoParcial() {
-    setPagosParciales((prev) => [...prev, { medio: MEDIOS[0], monto: "" }]);
-  }
-
-  function removePagoParcial(idx: number) {
-    setPagosParciales((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function updatePagoParcial(idx: number, field: "medio" | "monto", value: string) {
-    setPagosParciales((prev) => prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p)));
-  }
-
   async function submit(confirmarPerdida: boolean) {
-    if (!producto) {
-      setError("Elegí un producto");
+    const itemsValidos = items.filter((it): it is CartItem & { producto: ProductoDTO } => it.producto !== null);
+    if (itemsValidos.length === 0) {
+      setError("Agregá al menos un producto");
       return;
     }
-    if (cantidadNum <= 0) {
-      setError("Cantidad inválida");
+    if (itemsValidos.some((it) => (Number(it.cantidad) || 0) <= 0)) {
+      setError("Cantidad inválida en algún producto");
       return;
     }
 
-    const pagos = dividido
-      ? [...pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 })), { medio: medioResto, monto: montoResto }]
-      : undefined;
+    const carritoItems: ItemCarrito[] = itemsValidos.map((it) => ({
+      productoId: it.producto.id,
+      cantidad: Number(it.cantidad) || 0,
+      medioPago: it.medioPago,
+      promocionId: it.promocionId || undefined,
+    }));
 
     setError(null);
     startTransition(async () => {
-      const res = await registrarVenta({
+      const res = await registrarVentaCarrito({
         fecha,
-        productoId: producto.id,
-        cantidad: cantidadNum,
-        medioPago,
-        pagos,
         vendedor,
         clienteNombre: clienteNombre || undefined,
         observaciones: observaciones || undefined,
         sucursal: sucursal || undefined,
-        promocionId: promocionId || undefined,
+        items: carritoItems,
         confirmarPerdida,
       });
 
@@ -291,16 +268,9 @@ function NuevaVentaForm(props: Props) {
         return;
       }
 
-      setProductoId("");
-      setSelectedProducto(null);
-      setProductoQuery("");
-      setSugerencias([]);
-      setCantidad("1");
-      setDividido(false);
-      setPagosParciales([]);
+      setItems([nuevoItem()]);
       setClienteNombre("");
       setObservaciones("");
-      setPromocionId("");
     });
   }
 
@@ -320,69 +290,6 @@ function NuevaVentaForm(props: Props) {
           onKeyDown={handleBarcode}
           placeholder="Escanear y Enter"
         />
-      </div>
-      <div className="field" style={{ minWidth: 240, position: "relative" }}>
-        <label htmlFor="v-producto">Producto</label>
-        <input
-          id="v-producto"
-          placeholder="Buscar por nombre..."
-          autoComplete="off"
-          value={productoQuery}
-          onChange={(e) => {
-            const texto = e.target.value;
-            setProductoQuery(texto);
-            setMostrarSugerencias(true);
-            if (selectedProducto && texto !== labelProducto(selectedProducto)) {
-              setSelectedProducto(null);
-              setProductoId("");
-            }
-          }}
-          onFocus={() => setMostrarSugerencias(true)}
-          onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
-          required
-        />
-        {mostrarSugerencias && (buscando || sugerencias.length > 0) && (
-          <ul className="autocomplete-list">
-            {buscando ? (
-              <li className="autocomplete-hint">Buscando...</li>
-            ) : (
-              sugerencias.map((p) => (
-                <li key={p.id} onMouseDown={(e) => { e.preventDefault(); elegirProducto(p); }}>
-                  {labelProducto(p)}
-                </li>
-              ))
-            )}
-          </ul>
-        )}
-      </div>
-      <div className="field">
-        <label htmlFor="v-cantidad">Cantidad</label>
-        <input id="v-cantidad" type="number" min={1} max={producto?.stock ?? undefined} value={cantidad} onChange={(e) => setCantidad(e.target.value)} style={{ width: 80 }} />
-      </div>
-      <div className="field">
-        <label htmlFor="v-medio">Medio de pago</label>
-        <select id="v-medio" value={medioPago} onChange={(e) => setMedioPago(e.target.value)} disabled={dividido}>
-          {MEDIOS.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="v-promo">Promoción</label>
-        <select id="v-promo" value={promocionId} onChange={(e) => setPromocionId(e.target.value)}>
-          <option value="">Ninguna</option>
-          {props.promociones.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre} {p.tipo === "porcentaje" ? `(${p.valorPorcentaje}% OFF)` : "(2x1)"}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label>Precio</label>
-        <div style={{ height: 36, display: "flex", alignItems: "center" }} className="num">
-          {fmt(totalConPromo)}
-        </div>
       </div>
       <div className="field">
         <label htmlFor="v-fecha">Fecha</label>
@@ -408,61 +315,166 @@ function NuevaVentaForm(props: Props) {
         <input id="v-obs" value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
       </div>
 
-      <div className="checkbox-row" style={{ flexBasis: "100%" }}>
-        <input
-          type="checkbox"
-          id="v-dividir"
-          checked={dividido}
-          onChange={(e) => {
-            setDividido(e.target.checked);
-            if (e.target.checked && pagosParciales.length === 0) addPagoParcial();
-          }}
-        />
-        <label htmlFor="v-dividir">Dividir el pago entre varios medios</label>
+      <div style={{ flexBasis: "100%", marginTop: 12 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Cantidad</th>
+              <th>Medio de pago</th>
+              <th>Promoción</th>
+              <th>Subtotal</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <CartItemRow
+                key={item.id}
+                item={item}
+                config={config}
+                promociones={props.promociones}
+                onChange={(patch) => updateItem(item.id, patch)}
+                onRemove={() => removeItem(item.id)}
+                removable={items.length > 1}
+              />
+            ))}
+          </tbody>
+        </table>
+        <button type="button" className="btn ghost small" style={{ marginTop: 8 }} onClick={() => setItems((prev) => [...prev, nuevoItem()])}>
+          + Agregar producto
+        </button>
       </div>
 
-      {dividido && (
-        <div style={{ flexBasis: "100%" }}>
-          {pagosParciales.map((p, idx) => (
-            <div className="pago-row" key={idx}>
-              <select value={p.medio} onChange={(e) => updatePagoParcial(idx, "medio", e.target.value)}>
-                {MEDIOS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Monto"
-                value={p.monto}
-                onChange={(e) => updatePagoParcial(idx, "monto", e.target.value)}
-                style={{ width: 120 }}
-              />
-              <button type="button" className="btn ghost small" onClick={() => removePagoParcial(idx)}>
-                Quitar
-              </button>
-            </div>
-          ))}
-          <button type="button" className="btn ghost small" onClick={addPagoParcial}>
-            + Agregar medio
-          </button>
-          <div className="pago-row" style={{ marginTop: 8 }}>
-            <span className="hint">Resto automático:</span>
-            <select value={medioResto} onChange={(e) => setMedioResto(e.target.value)}>
-              {MEDIOS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-            <span className="num">{fmt(montoResto)}</span>
-          </div>
+      <div className="field" style={{ marginTop: 16 }}>
+        <label>Total</label>
+        <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18 }} className="num">
+          {fmt(total)}
         </div>
-      )}
+      </div>
 
       {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
 
-      <button className="btn" type="submit" disabled={pending}>
+      <button className="btn" type="submit" disabled={pending} style={{ flexBasis: "100%" }}>
         Registrar venta
       </button>
     </form>
+  );
+}
+
+function CartItemRow({
+  item,
+  config,
+  promociones,
+  onChange,
+  onRemove,
+  removable,
+}: {
+  item: CartItem;
+  config: ConfigDTO;
+  promociones: PromocionDTO[];
+  onChange: (patch: Partial<CartItem>) => void;
+  onRemove: () => void;
+  removable: boolean;
+}) {
+  const [sugerencias, setSugerencias] = useState<ProductoDTO[]>([]);
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+  const [buscando, setBuscando] = useState(false);
+
+  useEffect(() => {
+    if (item.producto && item.productoQuery === labelProducto(item.producto)) {
+      setSugerencias([]);
+      return;
+    }
+    if (!item.productoQuery.trim()) {
+      setSugerencias([]);
+      setBuscando(false);
+      return;
+    }
+    setBuscando(true);
+    const timer = setTimeout(async () => {
+      const resultados = await buscarProductos(item.productoQuery);
+      setSugerencias(resultados);
+      setBuscando(false);
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.productoQuery]);
+
+  function elegirProducto(p: ProductoDTO) {
+    onChange({ producto: p, productoQuery: labelProducto(p) });
+    setSugerencias([]);
+    setMostrarSugerencias(false);
+  }
+
+  const subtotal = totalItem(item, config, promociones);
+
+  return (
+    <tr>
+      <td style={{ position: "relative", minWidth: 220 }}>
+        <input
+          placeholder="Buscar por nombre..."
+          autoComplete="off"
+          value={item.productoQuery}
+          onChange={(e) => {
+            const texto = e.target.value;
+            onChange({
+              productoQuery: texto,
+              ...(item.producto && texto !== labelProducto(item.producto) ? { producto: null } : {}),
+            });
+            setMostrarSugerencias(true);
+          }}
+          onFocus={() => setMostrarSugerencias(true)}
+          onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
+        />
+        {mostrarSugerencias && (buscando || sugerencias.length > 0) && (
+          <ul className="autocomplete-list">
+            {buscando ? (
+              <li className="autocomplete-hint">Buscando...</li>
+            ) : (
+              sugerencias.map((p) => (
+                <li key={p.id} onMouseDown={(e) => { e.preventDefault(); elegirProducto(p); }}>
+                  {labelProducto(p)}
+                </li>
+              ))
+            )}
+          </ul>
+        )}
+      </td>
+      <td>
+        <input
+          className="num"
+          type="number"
+          min={1}
+          max={item.producto?.stock ?? undefined}
+          value={item.cantidad}
+          onChange={(e) => onChange({ cantidad: e.target.value })}
+          style={{ width: 70 }}
+        />
+      </td>
+      <td>
+        <select value={item.medioPago} onChange={(e) => onChange({ medioPago: e.target.value })}>
+          {MEDIOS.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      </td>
+      <td>
+        <select value={item.promocionId} onChange={(e) => onChange({ promocionId: e.target.value })}>
+          <option value="">Ninguna</option>
+          {promociones.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nombre} {p.tipo === "porcentaje" ? `(${p.valorPorcentaje}% OFF)` : "(2x1)"}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="num">{fmt(subtotal)}</td>
+      <td>
+        <button className="btn danger small" type="button" onClick={onRemove} disabled={!removable}>
+          <IconTrash size={14} />
+        </button>
+      </td>
+    </tr>
   );
 }
