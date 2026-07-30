@@ -7,6 +7,7 @@ import { esAgotado, esStockBajo } from "@/lib/stock";
 import { BarChart } from "@/components/charts/BarChart";
 import {
   actualizarProducto,
+  actualizarCostoTodosTalles,
   crearProducto,
   eliminarProducto,
   sumarStock,
@@ -54,7 +55,9 @@ export function StockView(props: Props) {
         p.nombre.toLowerCase().includes(q) ||
         p.marca.toLowerCase().includes(q) ||
         p.color.toLowerCase().includes(q) ||
-        p.talle.toLowerCase().includes(q)
+        p.talle.toLowerCase().includes(q) ||
+        p.tipo.toLowerCase().includes(q) ||
+        (p.codigo?.toLowerCase().includes(q) ?? false)
     );
   }, [productos, busqueda]);
 
@@ -131,6 +134,22 @@ export function StockView(props: Props) {
         </div>
       )}
 
+      {isAdmin && (
+        <>
+          <div className="section-title" style={{ marginTop: 0 }}>Stock por categoría</div>
+          <div className="cols-2" style={{ marginBottom: 24 }}>
+            <div className="card">
+              <h3 style={{ marginBottom: 12, fontSize: 14 }}>Unidades en stock</h3>
+              <BarChart entries={stockPorTipo.unidades} />
+            </div>
+            <div className="card">
+              <h3 style={{ marginBottom: 12, fontSize: 14 }}>Modelos distintos</h3>
+              <BarChart entries={stockPorTipo.modelos} />
+            </div>
+          </div>
+        </>
+      )}
+
       {isAdmin && showForm && (
         <div className="card" style={{ marginBottom: 24 }}>
           <NuevoProductoForm
@@ -147,7 +166,7 @@ export function StockView(props: Props) {
           <input
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre, marca, color o talle..."
+            placeholder="Buscar por nombre, marca, color, talle, código o tipo..."
           />
         </div>
       )}
@@ -190,22 +209,6 @@ export function StockView(props: Props) {
           </table>
         )}
       </div>
-
-      {isAdmin && (
-        <>
-          <div className="section-title">Stock por categoría</div>
-          <div className="cols-2">
-            <div className="card">
-              <h3 style={{ marginBottom: 12, fontSize: 14 }}>Unidades en stock</h3>
-              <BarChart entries={stockPorTipo.unidades} />
-            </div>
-            <div className="card">
-              <h3 style={{ marginBottom: 12, fontSize: 14 }}>Modelos distintos</h3>
-              <BarChart entries={stockPorTipo.modelos} />
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -244,6 +247,24 @@ function ProductoRow({
     startTransition(async () => {
       try {
         await actualizarProducto(producto.id, { [field]: value });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al guardar");
+      }
+    });
+  }
+
+  function commitCosto() {
+    const nuevoCosto = Number(costo);
+    if (nuevoCosto === producto.costo) return;
+    setError(null);
+    const aplicarATodos = confirm(`¿Aplicar este costo a todos los talles de "${producto.nombre}"?`);
+    startTransition(async () => {
+      try {
+        if (aplicarATodos) {
+          await actualizarCostoTodosTalles(producto.nombre, nuevoCosto);
+        } else {
+          await actualizarProducto(producto.id, { costo: nuevoCosto });
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al guardar");
       }
@@ -330,7 +351,7 @@ function ProductoRow({
             step="0.01"
             value={costo}
             onChange={(e) => setCosto(e.target.value)}
-            onBlur={() => Number(costo) !== producto.costo && commit("costo", Number(costo))}
+            onBlur={commitCosto}
             style={{ width: 100 }}
             disabled={pending}
           />
@@ -420,8 +441,11 @@ function EditProductoRow({
   const [costo, setCosto] = useState(String(producto.costo));
   const [stock, setStock] = useState(String(producto.stock));
   const [observaciones, setObservaciones] = useState(producto.observaciones ?? "");
+  const [aplicarCostoATodos, setAplicarCostoATodos] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const costoCambio = Number(costo) !== producto.costo;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -435,10 +459,13 @@ function EditProductoRow({
           color,
           talle,
           codigo: codigo || null,
-          costo: Number(costo),
+          ...(aplicarCostoATodos && costoCambio ? {} : { costo: Number(costo) }),
           stock: Number(stock),
           observaciones: observaciones.trim() || null,
         });
+        if (aplicarCostoATodos && costoCambio) {
+          await actualizarCostoTodosTalles(nombre, Number(costo));
+        }
         onDone();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al guardar");
@@ -493,6 +520,19 @@ function EditProductoRow({
             <label htmlFor={`ep-obs-${producto.id}`}>Observaciones</label>
             <input id={`ep-obs-${producto.id}`} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
           </div>
+          {costoCambio && (
+            <div className="checkbox-row" style={{ flexBasis: "100%" }}>
+              <input
+                id={`ep-costo-todos-${producto.id}`}
+                type="checkbox"
+                checked={aplicarCostoATodos}
+                onChange={(e) => setAplicarCostoATodos(e.target.checked)}
+              />
+              <label htmlFor={`ep-costo-todos-${producto.id}`}>
+                ¿Aplicar este costo a todos los talles de este modelo?
+              </label>
+            </div>
+          )}
           {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
           <button className="btn" type="submit" disabled={pending}>Guardar</button>
           <button className="btn ghost" type="button" onClick={onCancel} disabled={pending}>Cancelar</button>
@@ -511,6 +551,7 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
   const [proveedorNombre, setProveedorNombre] = useState(seed?.proveedor?.nombre ?? "");
   const [costo, setCosto] = useState(seed ? String(seed.costo) : "");
   const [stockMin, setStockMin] = useState(seed ? String(seed.stockMin) : "2");
+  const [observaciones, setObservaciones] = useState(seed?.observaciones ?? "");
   const [seleccion, setSeleccion] = useState<Record<string, { activo: boolean; stock: string; codigo: string }>>({});
   const [cantidadRapida, setCantidadRapida] = useState("1");
   const [error, setError] = useState<string | null>(null);
@@ -569,6 +610,7 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
           proveedorNombre: proveedorNombre || undefined,
           costo: Number(costo),
           stockMin: Number(stockMin) || 0,
+          observaciones: observaciones || undefined,
           talles,
         });
         props.onDone();
@@ -626,6 +668,10 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
       <div className="field">
         <label htmlFor="p-stock-min">Stock mínimo</label>
         <input id="p-stock-min" type="number" min="0" value={stockMin} onChange={(e) => setStockMin(e.target.value)} />
+      </div>
+      <div className="field" style={{ minWidth: 200 }}>
+        <label htmlFor="p-obs">Observaciones</label>
+        <input id="p-obs" placeholder="Opcional" value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
       </div>
 
       <div style={{ flexBasis: "100%" }}>

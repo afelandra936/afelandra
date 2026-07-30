@@ -68,6 +68,7 @@ export async function crearProducto(data: {
   proveedorNombre?: string;
   costo: number;
   stockMin: number;
+  observaciones?: string;
   talles: TalleInput[];
 }) {
   await requireRole("admin");
@@ -105,6 +106,7 @@ export async function crearProducto(data: {
       stock: t.stock,
       stockMin: data.stockMin,
       codigo: t.codigo || null,
+      observaciones: data.observaciones?.trim() || null,
     })),
   });
 
@@ -140,6 +142,15 @@ export async function actualizarProducto(
     where: { id },
     data: { ...data, nombre: data.nombre?.trim(), talle: data.talle === "Único" ? "" : data.talle },
   });
+  revalidatePath("/stock");
+}
+
+/** Aplica un costo a todas las variantes de talle de un mismo modelo (mismo nombre). */
+export async function actualizarCostoTodosTalles(nombre: string, costo: number) {
+  await requireRole("admin");
+  if (!(costo > 0)) throw new Error("El costo debe ser mayor a 0");
+
+  await prisma.producto.updateMany({ where: { nombre }, data: { costo } });
   revalidatePath("/stock");
 }
 
