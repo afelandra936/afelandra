@@ -82,3 +82,28 @@ export async function getRentabilidad(dias: number | null) {
     porProveedor: [...porProveedor.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([label, value]) => ({ label, value })),
   };
 }
+
+const MEDIOS_COMISION = new Set(["Efectivo", "Transferencia"]);
+
+export type ComisionVendedor = { vendedor: string; totalComision: number; totalGeneral: number };
+
+/** Vendido por cada vendedor, separando lo cobrado en efectivo/transferencia (base de comisión) del resto. */
+export async function getComisionesVendedores(dias: number | null): Promise<ComisionVendedor[]> {
+  const where = dias ? { fecha: { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) } } : {};
+  const ventas = await prisma.venta.findMany({
+    where,
+    select: { vendedor: true, cantidad: true, precioVenta: true, pagos: { select: { medio: true, monto: true } } },
+  });
+
+  const porVendedor = new Map<string, ComisionVendedor>();
+  for (const v of ventas) {
+    const entry = porVendedor.get(v.vendedor) ?? { vendedor: v.vendedor, totalComision: 0, totalGeneral: 0 };
+    entry.totalGeneral += toNumber(v.precioVenta) * v.cantidad;
+    for (const pago of v.pagos) {
+      if (MEDIOS_COMISION.has(pago.medio)) entry.totalComision += toNumber(pago.monto);
+    }
+    porVendedor.set(v.vendedor, entry);
+  }
+
+  return [...porVendedor.values()].sort((a, b) => b.totalComision - a.totalComision);
+}

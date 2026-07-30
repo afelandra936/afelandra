@@ -19,7 +19,17 @@ type Data = {
   porProveedor: ChartEntry[];
 };
 
-export function RentabilidadView({ data, periodoActivo }: { data: Data; periodoActivo: string }) {
+type ComisionVendedor = { vendedor: string; totalComision: number; totalGeneral: number };
+
+export function RentabilidadView({
+  data,
+  comisiones,
+  periodoActivo,
+}: {
+  data: Data;
+  comisiones: ComisionVendedor[];
+  periodoActivo: string;
+}) {
   return (
     <div className="view active">
       <header className="view-head">
@@ -68,6 +78,35 @@ export function RentabilidadView({ data, periodoActivo }: { data: Data; periodoA
           <h3 style={{ marginBottom: 12, fontSize: 14 }}>Ganancia por proveedor</h3>
           <BarChart entries={data.porProveedor} />
         </div>
+      </div>
+
+      <div className="section-title">Ventas por vendedor</div>
+      <div className="card">
+        <p className="hint" style={{ marginBottom: 12 }}>
+          Base de comisión: solo lo cobrado en efectivo o transferencia.
+        </p>
+        {comisiones.length === 0 ? (
+          <p className="empty">No hay ventas en este período.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Vendedor</th>
+                <th>Efectivo + Transferencia</th>
+                <th>Total general</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comisiones.map((c) => (
+                <tr key={c.vendedor}>
+                  <td>{c.vendedor}</td>
+                  <td className="num">{fmt(c.totalComision)}</td>
+                  <td className="num">{fmt(c.totalGeneral)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
