@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
-import { MEDIOS, precioUnitario, factorPromocion } from "@/lib/pricing";
+import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
 import { buscarProductos, buscarProductoPorCodigo } from "@/lib/actions/productos";
 import { BarChart } from "@/components/charts/BarChart";
@@ -161,6 +161,9 @@ type CartItem = {
   cantidad: string;
   medioPago: string;
   promocionId: string;
+  dividido: boolean;
+  pagosParciales: { medio: string; monto: string }[];
+  medioResto: string;
 };
 
 function nuevoItem(): CartItem {
@@ -171,15 +174,30 @@ function nuevoItem(): CartItem {
     cantidad: "1",
     medioPago: MEDIOS[0],
     promocionId: "",
+    dividido: false,
+    pagosParciales: [],
+    medioResto: MEDIOS[0],
   };
+}
+
+function montoRestoItem(item: CartItem, config: ConfigDTO): number {
+  if (!item.producto) return 0;
+  const cantidad = Number(item.cantidad) || 0;
+  const costoTotal = item.producto.costo * cantidad;
+  const pagosNum = item.pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 }));
+  return calcularMontoResto(costoTotal, pagosNum, item.medioResto, config);
 }
 
 function totalItem(item: CartItem, config: ConfigDTO, promociones: PromocionDTO[]): number {
   if (!item.producto) return 0;
   const cantidad = Number(item.cantidad) || 0;
-  const base = precioUnitario(item.producto.costo, item.medioPago, config) * cantidad;
   const promocion = promociones.find((p) => p.id === item.promocionId) ?? null;
-  return base * factorPromocion(promocion, cantidad);
+  const factor = factorPromocion(promocion, cantidad);
+  if (item.dividido) {
+    const sumaParcial = item.pagosParciales.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
+    return (sumaParcial + montoRestoItem(item, config)) * factor;
+  }
+  return precioUnitario(item.producto.costo, item.medioPago, config) * cantidad * factor;
 }
 
 function NuevaVentaForm(props: Props) {
@@ -240,12 +258,28 @@ function NuevaVentaForm(props: Props) {
       return;
     }
 
-    const carritoItems: ItemCarrito[] = itemsValidos.map((it) => ({
-      productoId: it.producto.id,
-      cantidad: Number(it.cantidad) || 0,
-      medioPago: it.medioPago,
-      promocionId: it.promocionId || undefined,
-    }));
+    const carritoItems: ItemCarrito[] = itemsValidos.map((it) => {
+      const cantidadNum = Number(it.cantidad) || 0;
+      if (it.dividido) {
+        const pagos = [
+          ...it.pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 })),
+          { medio: it.medioResto, monto: montoRestoItem(it, config) },
+        ];
+        return {
+          productoId: it.producto.id,
+          cantidad: cantidadNum,
+          medioPago: it.medioPago,
+          pagos,
+          promocionId: it.promocionId || undefined,
+        };
+      }
+      return {
+        productoId: it.producto.id,
+        cantidad: cantidadNum,
+        medioPago: it.medioPago,
+        promocionId: it.promocionId || undefined,
+      };
+    });
 
     setError(null);
     startTransition(async () => {
@@ -410,6 +444,7 @@ function CartItemRow({
   const subtotal = totalItem(item, config, promociones);
 
   return (
+    <>
     <tr>
       <td style={{ position: "relative", minWidth: 220 }}>
         <input
@@ -453,11 +488,26 @@ function CartItemRow({
         />
       </td>
       <td>
-        <select value={item.medioPago} onChange={(e) => onChange({ medioPago: e.target.value })}>
+        <select value={item.medioPago} onChange={(e) => onChange({ medioPago: e.target.value })} disabled={item.dividido}>
           {MEDIOS.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
         </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, marginTop: 4, color: "var(--ink-soft)" }}>
+          <input
+            type="checkbox"
+            checked={item.dividido}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              onChange({
+                dividido: checked,
+                pagosParciales: checked && item.pagosParciales.length === 0 ? [{ medio: MEDIOS[0], monto: "" }] : item.pagosParciales,
+              });
+            }}
+            style={{ width: "auto", height: "auto", minWidth: "auto" }}
+          />
+          Dividir pago
+        </label>
       </td>
       <td>
         <select value={item.promocionId} onChange={(e) => onChange({ promocionId: e.target.value })}>
@@ -476,5 +526,59 @@ function CartItemRow({
         </button>
       </td>
     </tr>
+    {item.dividido && (
+      <tr>
+        <td colSpan={6} style={{ paddingTop: 0 }}>
+          {item.pagosParciales.map((p, idx) => (
+            <div className="pago-row" key={idx}>
+              <select
+                value={p.medio}
+                onChange={(e) =>
+                  onChange({ pagosParciales: item.pagosParciales.map((pp, i) => (i === idx ? { ...pp, medio: e.target.value } : pp)) })
+                }
+              >
+                {MEDIOS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Monto"
+                value={p.monto}
+                onChange={(e) =>
+                  onChange({ pagosParciales: item.pagosParciales.map((pp, i) => (i === idx ? { ...pp, monto: e.target.value } : pp)) })
+                }
+                style={{ width: 120 }}
+              />
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={() => onChange({ pagosParciales: item.pagosParciales.filter((_, i) => i !== idx) })}
+              >
+                Quitar
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => onChange({ pagosParciales: [...item.pagosParciales, { medio: MEDIOS[0], monto: "" }] })}
+          >
+            + Agregar medio
+          </button>
+          <div className="pago-row" style={{ marginTop: 8 }}>
+            <span className="hint">Resto automático:</span>
+            <select value={item.medioResto} onChange={(e) => onChange({ medioResto: e.target.value })}>
+              {MEDIOS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <span className="num">{fmt(montoRestoItem(item, config))}</span>
+          </div>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }

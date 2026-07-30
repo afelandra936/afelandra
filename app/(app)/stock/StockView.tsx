@@ -236,6 +236,7 @@ function ProductoRow({
   const [color, setColor] = useState(producto.color);
   const [codigo, setCodigo] = useState(producto.codigo ?? "");
   const [costo, setCosto] = useState(String(producto.costo));
+  const [preguntarCostoTodos, setPreguntarCostoTodos] = useState(false);
   const [stock, setStock] = useState(String(producto.stock));
   const [sumando, setSumando] = useState(false);
   const [cantidadASumar, setCantidadASumar] = useState("1");
@@ -257,14 +258,22 @@ function ProductoRow({
     const nuevoCosto = Number(costo);
     if (nuevoCosto === producto.costo) return;
     setError(null);
-    const aplicarATodos = confirm(`¿Aplicar este costo a todos los talles de "${producto.nombre}"?`);
     startTransition(async () => {
       try {
-        if (aplicarATodos) {
-          await actualizarCostoTodosTalles(producto.nombre, nuevoCosto);
-        } else {
-          await actualizarProducto(producto.id, { costo: nuevoCosto });
-        }
+        await actualizarProducto(producto.id, { costo: nuevoCosto });
+        setPreguntarCostoTodos(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al guardar");
+      }
+    });
+  }
+
+  function aplicarCostoATodos() {
+    setPreguntarCostoTodos(false);
+    setError(null);
+    startTransition(async () => {
+      try {
+        await actualizarCostoTodosTalles(producto.nombre, Number(costo));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al guardar");
       }
@@ -355,6 +364,13 @@ function ProductoRow({
             style={{ width: 100 }}
             disabled={pending}
           />
+          {preguntarCostoTodos && (
+            <div className="hint" style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4, whiteSpace: "nowrap" }}>
+              ¿A todos los talles?
+              <button type="button" className="btn ghost small" onClick={aplicarCostoATodos} disabled={pending}>Sí</button>
+              <button type="button" className="btn ghost small" onClick={() => setPreguntarCostoTodos(false)} disabled={pending}>No</button>
+            </div>
+          )}
         </td>
       )}
       <td>

@@ -13,10 +13,13 @@ function revalidateAfterVenta() {
   }
 }
 
+export type PagoInput = { medio: string; monto: number };
+
 export type ItemCarrito = {
   productoId: string;
   cantidad: number;
   medioPago: string;
+  pagos?: PagoInput[]; // si hay más de uno, el pago de este ítem fue dividido
   promocionId?: string;
 };
 
@@ -78,7 +81,14 @@ export async function registrarVentaCarrito(
 
     const costoUnitario = Number(producto.costo);
     const factor = factorPromocion(promocion, item.cantidad);
-    const precioVentaUnitario = precioUnitario(costoUnitario, item.medioPago, config) * factor;
+
+    const pagosBase: PagoInput[] =
+      item.pagos && item.pagos.length > 0
+        ? item.pagos
+        : [{ medio: item.medioPago, monto: precioUnitario(costoUnitario, item.medioPago, config) * item.cantidad }];
+    const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor }));
+    const precioTotal = pagos.reduce((acc, p) => acc + p.monto, 0);
+    const precioVentaUnitario = precioTotal / item.cantidad;
 
     if (precioVentaUnitario < costoUnitario) {
       perdidas.push(`${producto.nombre} (talle ${producto.talle || "Único"})`);
@@ -87,6 +97,8 @@ export async function registrarVentaCarrito(
     const proveedorNombre = producto.proveedorId
       ? (await prisma.proveedor.findUnique({ where: { id: producto.proveedorId } }))?.nombre ?? null
       : null;
+
+    const medioPagoFinal = pagos.length > 1 ? "Dividido" : pagos[0].medio;
 
     preparados.push({
       productoId: producto.id,
@@ -99,7 +111,7 @@ export async function registrarVentaCarrito(
         proveedor: proveedorNombre,
         talle: producto.talle,
         cantidad: item.cantidad,
-        medioPago: item.medioPago,
+        medioPago: medioPagoFinal,
         vendedor: input.vendedor.trim(),
         cliente: clienteId ? { connect: { id: clienteId } } : undefined,
         clienteNombre,
@@ -109,7 +121,7 @@ export async function registrarVentaCarrito(
         costoUnitario,
         promocion: promocion ? { connect: { id: promocion.id } } : undefined,
         promocionNombre: promocion?.nombre ?? null,
-        pagos: { create: { medio: item.medioPago, monto: precioVentaUnitario * item.cantidad } },
+        pagos: { create: pagos.map((p) => ({ medio: p.medio, monto: p.monto })) },
       },
     });
   }
