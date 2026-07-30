@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
-import { MEDIOS, precioUnitario, factorPromocion } from "@/lib/pricing";
+import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
 import { buscarProductos, buscarProductoPorCodigo } from "@/lib/actions/productos";
 import { BarChart } from "@/components/charts/BarChart";
@@ -182,6 +182,47 @@ function totalItem(item: CartItem, config: ConfigDTO, promociones: PromocionDTO[
   return precioUnitario(item.producto.costo, item.medioPago, config) * cantidad * factor;
 }
 
+type ItemConProducto = CartItem & { producto: ProductoDTO };
+
+/**
+ * Igual que el "resto automático" de una venta simple, pero usando el costo de
+ * TODOS los productos del carrito como base — así seguir cobrando en 3 cuotas o en
+ * efectivo sigue "valiendo" lo mismo en términos de costo cubierto, sin importar
+ * cuántos productos distintos haya. Después, cada producto se lleva su parte
+ * proporcional a su costo, y recién ahí se le aplica su propia promoción (si tiene).
+ */
+function calcularDivisionCarrito(
+  itemsValidos: ItemConProducto[],
+  pagosParciales: { medio: string; monto: string }[],
+  medioResto: string,
+  config: ConfigDTO,
+  promociones: PromocionDTO[]
+): {
+  porItem: { id: string; pagos: { medio: string; monto: number }[]; total: number }[];
+  total: number;
+  montoResto: number;
+} {
+  const costoTotalCarrito = itemsValidos.reduce((acc, it) => acc + it.producto.costo * (Number(it.cantidad) || 0), 0);
+  const pagosNum = pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 }));
+  const montoResto = calcularMontoResto(costoTotalCarrito, pagosNum, medioResto, config);
+  const pagosGlobal = [...pagosNum, { medio: medioResto, monto: montoResto }];
+
+  let total = 0;
+  const porItem = itemsValidos.map((it) => {
+    const cantidad = Number(it.cantidad) || 0;
+    const costoItem = it.producto.costo * cantidad;
+    const share = costoTotalCarrito > 0 ? costoItem / costoTotalCarrito : 0;
+    const promocion = promociones.find((p) => p.id === it.promocionId) ?? null;
+    const factor = factorPromocion(promocion, cantidad);
+    const pagos = pagosGlobal.map((p) => ({ medio: p.medio, monto: p.monto * share }));
+    const totalItemConFactor = pagos.reduce((acc, p) => acc + p.monto, 0) * factor;
+    total += totalItemConFactor;
+    return { id: it.id, pagos, total: totalItemConFactor };
+  });
+
+  return { porItem, total, montoResto };
+}
+
 function NuevaVentaForm(props: Props) {
   const { config } = props;
 
@@ -198,8 +239,14 @@ function NuevaVentaForm(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const total = items.reduce((acc, item) => acc + totalItem(item, config, props.promociones), 0);
-  const montoResto = Math.max(0, total - pagosParciales.reduce((acc, p) => acc + (Number(p.monto) || 0), 0));
+  const itemsValidos = items.filter((it): it is ItemConProducto => it.producto !== null);
+  const divisionCarrito = dividido
+    ? calcularDivisionCarrito(itemsValidos, pagosParciales, medioResto, config, props.promociones)
+    : null;
+  const total = divisionCarrito
+    ? divisionCarrito.total
+    : items.reduce((acc, item) => acc + totalItem(item, config, props.promociones), 0);
+  const montoResto = divisionCarrito?.montoResto ?? 0;
 
   function addPagoParcial() {
     setPagosParciales((prev) => [...prev, { medio: MEDIOS[0], monto: "" }]);
@@ -246,7 +293,6 @@ function NuevaVentaForm(props: Props) {
   }
 
   async function submit(confirmarPerdida: boolean) {
-    const itemsValidos = items.filter((it): it is CartItem & { producto: ProductoDTO } => it.producto !== null);
     if (itemsValidos.length === 0) {
       setError("Agregá al menos un producto");
       return;
@@ -256,27 +302,14 @@ function NuevaVentaForm(props: Props) {
       return;
     }
 
-    const pagosGlobal = dividido
-      ? [...pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 })), { medio: medioResto, monto: montoResto }]
-      : null;
-
     const carritoItems: ItemCarrito[] = itemsValidos.map((it) => {
       const cantidadNum = Number(it.cantidad) || 0;
-      if (pagosGlobal && total > 0) {
-        const share = totalItem(it, config, props.promociones) / total;
-        const pagos = pagosGlobal.map((p) => ({ medio: p.medio, monto: p.monto * share }));
-        return {
-          productoId: it.producto.id,
-          cantidad: cantidadNum,
-          medioPago: it.medioPago,
-          pagos,
-          promocionId: it.promocionId || undefined,
-        };
-      }
+      const pagos = divisionCarrito?.porItem.find((p) => p.id === it.id)?.pagos;
       return {
         productoId: it.producto.id,
         cantidad: cantidadNum,
         medioPago: it.medioPago,
+        pagos,
         promocionId: it.promocionId || undefined,
       };
     });
@@ -373,6 +406,8 @@ function NuevaVentaForm(props: Props) {
                 onChange={(patch) => updateItem(item.id, patch)}
                 onRemove={() => removeItem(item.id)}
                 removable={items.length > 1}
+                subtotalOverride={divisionCarrito?.porItem.find((p) => p.id === item.id)?.total}
+                dividido={dividido}
               />
             ))}
           </tbody>
@@ -455,6 +490,8 @@ function CartItemRow({
   onChange,
   onRemove,
   removable,
+  subtotalOverride,
+  dividido,
 }: {
   item: CartItem;
   config: ConfigDTO;
@@ -462,6 +499,8 @@ function CartItemRow({
   onChange: (patch: Partial<CartItem>) => void;
   onRemove: () => void;
   removable: boolean;
+  subtotalOverride?: number;
+  dividido: boolean;
 }) {
   const [sugerencias, setSugerencias] = useState<ProductoDTO[]>([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
@@ -493,7 +532,7 @@ function CartItemRow({
     setMostrarSugerencias(false);
   }
 
-  const subtotal = totalItem(item, config, promociones);
+  const subtotal = subtotalOverride ?? totalItem(item, config, promociones);
 
   return (
     <tr>
@@ -539,7 +578,7 @@ function CartItemRow({
         />
       </td>
       <td>
-        <select value={item.medioPago} onChange={(e) => onChange({ medioPago: e.target.value })}>
+        <select value={item.medioPago} onChange={(e) => onChange({ medioPago: e.target.value })} disabled={dividido}>
           {MEDIOS.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
