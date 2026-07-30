@@ -72,22 +72,3 @@ export function factorPromocion(promocion: PromocionInput | null | undefined, ca
   }
   return 1;
 }
-
-/**
- * Cuando el pago se divide entre varios medios, cada monto ingresado "cubre"
- * una porción del costo total (monto / ratioMedio del medio). El medio "resto"
- * se lleva automáticamente lo que falta para cubrir el costo total restante.
- */
-export function calcularMontoResto(
-  costoTotal: number,
-  pagosIngresados: { medio: string; monto: number }[],
-  medioResto: string,
-  config: CoeficientesConfig
-): number {
-  const costoCubierto = pagosIngresados.reduce(
-    (acc, p) => acc + p.monto / ratioMedio(p.medio, config),
-    0
-  );
-  const costoRestante = Math.max(0, costoTotal - costoCubierto);
-  return costoRestante * ratioMedio(medioResto, config);
-}
