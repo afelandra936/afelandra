@@ -333,7 +333,7 @@ function ProductoRow({
       </td>
       <td>
         {isAdmin ? (
-          <input value={color} onChange={(e) => setColor(e.target.value)} onBlur={() => color !== producto.color && commit("color", color)} style={{ width: 60 }} disabled={pending} />
+          <input value={color} onChange={(e) => setColor(e.target.value)} onBlur={() => color !== producto.color && commit("color", color)} style={{ width: 110 }} disabled={pending} />
         ) : (
           producto.color
         )}
@@ -514,7 +514,7 @@ function EditProductoRow({
           </div>
           <div className="field">
             <label htmlFor={`ep-color-${producto.id}`}>Color</label>
-            <input id={`ep-color-${producto.id}`} value={color} onChange={(e) => setColor(e.target.value)} style={{ width: 80 }} />
+            <input id={`ep-color-${producto.id}`} value={color} onChange={(e) => setColor(e.target.value)} style={{ width: 110 }} />
           </div>
           <div className="field">
             <label htmlFor={`ep-talle-${producto.id}`}>Talle</label>
