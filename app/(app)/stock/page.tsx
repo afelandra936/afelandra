@@ -9,7 +9,7 @@ export default async function StockPage() {
   const [productos, config, session, sinMovimiento, proveedores] = await Promise.all([
     prisma.producto.findMany({
       include: { proveedor: { select: { id: true, nombre: true } } },
-      orderBy: [{ nombre: "asc" }, { talle: "asc" }],
+      orderBy: { createdAt: "desc" },
     }),
     getConfig(),
     getSession(),

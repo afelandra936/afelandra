@@ -27,6 +27,7 @@ type ProductoDTO = {
   stockMin: number;
   codigo: string | null;
   observaciones: string | null;
+  createdAt: string;
 };
 
 type Props = {
@@ -61,6 +62,41 @@ export function StockView(props: Props) {
     );
   }, [productos, busqueda]);
 
+  const tiposAccesorioSet = useMemo(() => new Set(props.tiposAccesorio), [props.tiposAccesorio]);
+
+  // Agrupa las filas por modelo (nombre): el grupo entero se ordena por la fecha de
+  // creación más reciente de cualquiera de sus talles (no por ediciones de campos,
+  // que no tocan createdAt), y dentro del grupo los talles siguen el orden
+  // configurado en Resumen (no alfabético, para que S/M/L/XL no queden desordenados).
+  const productosAgrupados = useMemo(() => {
+    const grupos = new Map<string, ProductoDTO[]>();
+    for (const p of productosFiltrados) {
+      const arr = grupos.get(p.nombre);
+      if (arr) arr.push(p);
+      else grupos.set(p.nombre, [p]);
+    }
+
+    const gruposConFecha = [...grupos.values()].map((items) => ({
+      items,
+      maxCreatedAt: items.reduce((max, p) => (p.createdAt > max ? p.createdAt : max), items[0].createdAt),
+    }));
+    gruposConFecha.sort((a, b) => (a.maxCreatedAt < b.maxCreatedAt ? 1 : a.maxCreatedAt > b.maxCreatedAt ? -1 : 0));
+
+    const resultado: ProductoDTO[] = [];
+    for (const grupo of gruposConFecha) {
+      const esAcc = tiposAccesorioSet.has(grupo.items[0].tipo);
+      const ordenTalles = esAcc ? props.tallesIndumentaria : props.tallesCalzado;
+      const talleIndex = (talle: string) => (talle ? ordenTalles.indexOf(talle) : -1);
+      const itemsOrdenados = [...grupo.items].sort((a, b) => {
+        const ia = talleIndex(a.talle);
+        const ib = talleIndex(b.talle);
+        return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+      });
+      resultado.push(...itemsOrdenados);
+    }
+    return resultado;
+  }, [productosFiltrados, tiposAccesorioSet, props.tallesCalzado, props.tallesIndumentaria]);
+
   function abrirNuevo() {
     setSeed(null);
     setShowForm(true);
@@ -72,7 +108,6 @@ export function StockView(props: Props) {
   }
 
   const sinMovimientoSet = useMemo(() => new Set(props.sinMovimientoIds), [props.sinMovimientoIds]);
-  const tiposAccesorioSet = useMemo(() => new Set(props.tiposAccesorio), [props.tiposAccesorio]);
 
   const metrics = useMemo(() => {
     const valorStock = productos.reduce((acc, p) => acc + p.stock * p.costo, 0);
@@ -193,7 +228,7 @@ export function StockView(props: Props) {
               </tr>
             </thead>
             <tbody>
-              {productosFiltrados.map((p) => (
+              {productosAgrupados.map((p) => (
                 <ProductoRow
                   key={p.id}
                   producto={p}
@@ -562,7 +597,7 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
   const { seed } = props;
   const [nombre, setNombre] = useState(seed?.nombre ?? "");
   const [tipo, setTipo] = useState(seed?.tipo ?? props.tiposCalzado[0] ?? "");
-  const [color, setColor] = useState(seed?.color ?? "");
+  const [color, setColor] = useState("");
   const [marca, setMarca] = useState(seed?.marca ?? "");
   const [proveedorNombre, setProveedorNombre] = useState(seed?.proveedor?.nombre ?? "");
   const [costo, setCosto] = useState(seed ? String(seed.costo) : "");
@@ -611,8 +646,14 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
       .filter(([, v]) => v.activo)
       .map(([talle, v]) => ({ talle, stock: Number(v.stock) || 0, codigo: v.codigo.trim() || undefined }));
 
-    if (talles.length === 0) {
-      setError("Elegí al menos un talle");
+    const faltantes: string[] = [];
+    if (!nombre.trim()) faltantes.push("Nombre");
+    if (!color.trim()) faltantes.push("Color");
+    if (!(Number(costo) > 0)) faltantes.push("Costo");
+    if (talles.length === 0) faltantes.push("al menos un talle");
+
+    if (faltantes.length > 0) {
+      setError(`Faltan completar: ${faltantes.join(", ")}.`);
       return;
     }
 

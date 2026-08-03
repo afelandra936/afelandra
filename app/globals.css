@@ -639,7 +639,7 @@ tr:last-child td {
   border-radius: 8px;
   padding: 8px 10px;
   background: var(--surface-soft);
-  min-width: 60px;
+  min-width: 76px;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -664,10 +664,11 @@ tr:last-child td {
 }
 
 .talle-chip input[type="number"] {
-  width: 52px;
-  height: 28px;
+  width: 68px;
+  height: 40px;
   padding: 0 6px;
-  font-size: 12px;
+  font-size: 18px;
+  font-weight: 600;
   min-width: auto;
   text-align: center;
 }
