@@ -66,8 +66,9 @@ export function StockView(props: Props) {
 
   // Agrupa las filas por modelo (nombre): el grupo entero se ordena por la fecha de
   // creación más reciente de cualquiera de sus talles (no por ediciones de campos,
-  // que no tocan createdAt), y dentro del grupo los talles siguen el orden
-  // configurado en Resumen (no alfabético, para que S/M/L/XL no queden desordenados).
+  // que no tocan createdAt). Dentro del grupo, se subagrupa por color (alfabético) y
+  // dentro de cada color los talles siguen el orden configurado en Resumen (no
+  // alfabético, para que S/M/L/XL no queden desordenados).
   const productosAgrupados = useMemo(() => {
     const grupos = new Map<string, ProductoDTO[]>();
     for (const p of productosFiltrados) {
@@ -88,6 +89,8 @@ export function StockView(props: Props) {
       const ordenTalles = esAcc ? props.tallesIndumentaria : props.tallesCalzado;
       const talleIndex = (talle: string) => (talle ? ordenTalles.indexOf(talle) : -1);
       const itemsOrdenados = [...grupo.items].sort((a, b) => {
+        const colorCmp = a.color.localeCompare(b.color, "es");
+        if (colorCmp !== 0) return colorCmp;
         const ia = talleIndex(a.talle);
         const ib = talleIndex(b.talle);
         return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
