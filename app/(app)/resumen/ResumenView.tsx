@@ -282,17 +282,14 @@ function CoeficienteMarcaForm({
       <div className="config-grid">
         <div className="field">
           <label htmlFor="cfm-marca">Marca</label>
-          <input
-            id="cfm-marca"
-            value={marca}
-            onChange={(e) => setMarca(e.target.value)}
-            list="marcas-list"
-            placeholder="Grimoldi"
-            disabled={!!editando}
-          />
-          <datalist id="marcas-list">
-            {marcasProductos.map((m) => <option key={m} value={m} />)}
-          </datalist>
+          {editando ? (
+            <input id="cfm-marca" value={marca} disabled />
+          ) : (
+            <select id="cfm-marca" value={marca} onChange={(e) => setMarca(e.target.value)}>
+              <option value="">Elegí una marca...</option>
+              {marcasProductos.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          )}
         </div>
         <div className="field">
           <label htmlFor="cfm-debito">Débito / transferencia (x)</label>
