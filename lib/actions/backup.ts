@@ -47,12 +47,15 @@ export type BackupData = {
     pinAdminHash: string | null; pinVendedorHash: string | null;
     talles: string[]; tallesIndumentaria: string[]; tiposCalzado: string[]; tiposAccesorio: string[];
   };
+  coeficientesMarca: {
+    id: string; marca: string; debito: number; credito3: number; credito6: number; contado: number;
+  }[];
 };
 
 export async function exportarDatos(): Promise<BackupData> {
   await requireRole("admin");
 
-  const [productos, ventas, gastos, proveedores, remitos, pagosProveedores, clientes, config, promociones] =
+  const [productos, ventas, gastos, proveedores, remitos, pagosProveedores, clientes, config, promociones, coeficientesMarca] =
     await Promise.all([
       prisma.producto.findMany(),
       prisma.venta.findMany({ include: { pagos: true } }),
@@ -63,6 +66,7 @@ export async function exportarDatos(): Promise<BackupData> {
       prisma.cliente.findMany(),
       getConfig(),
       prisma.promocion.findMany(),
+      prisma.coeficienteMarca.findMany(),
     ]);
 
   return serialize<BackupData>({
@@ -76,6 +80,7 @@ export async function exportarDatos(): Promise<BackupData> {
     clientes,
     config,
     promociones,
+    coeficientesMarca,
   });
 }
 
@@ -91,6 +96,7 @@ export async function importarDatos(data: BackupData) {
     await tx.cliente.deleteMany();
     await tx.proveedor.deleteMany();
     await tx.promocion.deleteMany();
+    await tx.coeficienteMarca.deleteMany();
 
     for (const p of data.proveedores) {
       await tx.proveedor.create({
@@ -208,6 +214,12 @@ export async function importarDatos(data: BackupData) {
           medio: pg.medio,
           nota: pg.nota,
         },
+      });
+    }
+
+    for (const c of data.coeficientesMarca) {
+      await tx.coeficienteMarca.create({
+        data: { id: c.id, marca: c.marca, debito: c.debito, credito3: c.credito3, credito6: c.credito6, contado: c.contado },
       });
     }
 

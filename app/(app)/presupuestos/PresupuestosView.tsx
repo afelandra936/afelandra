@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { IconTrash, IconPrinter, IconPlus } from "@tabler/icons-react";
 import { fmt } from "@/lib/format";
-import { MEDIOS, precioUnitario, factorPromocion } from "@/lib/pricing";
+import { MEDIOS, precioUnitario, factorPromocion, resolverCoeficientes } from "@/lib/pricing";
 import { buscarProductos, type ProductoBusqueda } from "@/lib/actions/productos";
 
 type PromocionDTO = {
@@ -14,6 +14,7 @@ type PromocionDTO = {
 };
 
 type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
+type CoeficientesPorMarcaDTO = Record<string, ConfigDTO>;
 
 type Item = {
   id: string;
@@ -39,19 +40,33 @@ function nuevoItem(): Item {
   };
 }
 
-function totalItem(item: Item, config: ConfigDTO, promociones: PromocionDTO[]): number {
+function totalItem(
+  item: Item,
+  config: ConfigDTO,
+  coeficientesPorMarca: CoeficientesPorMarcaDTO,
+  promociones: PromocionDTO[]
+): number {
   if (!item.producto) return 0;
   const cantidad = Number(item.cantidad) || 0;
-  const base = precioUnitario(item.producto.costo, item.medioPago, config) * cantidad;
+  const coef = resolverCoeficientes(item.producto.marca, config, coeficientesPorMarca);
+  const base = precioUnitario(item.producto.costo, item.medioPago, coef) * cantidad;
   const promocion = promociones.find((p) => p.id === item.promocionId) ?? null;
   return base * factorPromocion(promocion, cantidad);
 }
 
-export function PresupuestosView({ config, promociones }: { config: ConfigDTO; promociones: PromocionDTO[] }) {
+export function PresupuestosView({
+  config,
+  coeficientesPorMarca,
+  promociones,
+}: {
+  config: ConfigDTO;
+  coeficientesPorMarca: CoeficientesPorMarcaDTO;
+  promociones: PromocionDTO[];
+}) {
   const [cliente, setCliente] = useState("");
   const [items, setItems] = useState<Item[]>([nuevoItem()]);
 
-  const total = items.reduce((acc, item) => acc + totalItem(item, config, promociones), 0);
+  const total = items.reduce((acc, item) => acc + totalItem(item, config, coeficientesPorMarca, promociones), 0);
   const fecha = new Date().toLocaleDateString("es-AR");
 
   function updateItem(id: string, patch: Partial<Item>) {
@@ -101,6 +116,7 @@ export function PresupuestosView({ config, promociones }: { config: ConfigDTO; p
                 key={item.id}
                 item={item}
                 config={config}
+                coeficientesPorMarca={coeficientesPorMarca}
                 promociones={promociones}
                 onChange={(patch) => updateItem(item.id, patch)}
                 onRemove={() => removeItem(item.id)}
@@ -142,6 +158,7 @@ export function PresupuestosView({ config, promociones }: { config: ConfigDTO; p
 function ItemRow({
   item,
   config,
+  coeficientesPorMarca,
   promociones,
   onChange,
   onRemove,
@@ -149,6 +166,7 @@ function ItemRow({
 }: {
   item: Item;
   config: ConfigDTO;
+  coeficientesPorMarca: CoeficientesPorMarcaDTO;
   promociones: PromocionDTO[];
   onChange: (patch: Partial<Item>) => void;
   onRemove: () => void;
@@ -184,7 +202,7 @@ function ItemRow({
     setMostrarSugerencias(false);
   }
 
-  const subtotal = totalItem(item, config, promociones);
+  const subtotal = totalItem(item, config, coeficientesPorMarca, promociones);
 
   return (
     <tr>

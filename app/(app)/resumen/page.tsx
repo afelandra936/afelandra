@@ -9,11 +9,13 @@ export default async function ResumenPage() {
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
 
-  const [ventasHoy, ventasMes, gastosMes, config] = await Promise.all([
+  const [ventasHoy, ventasMes, gastosMes, config, coeficientesMarca, marcasProductos] = await Promise.all([
     prisma.venta.findMany({ where: { fecha: { gte: inicioHoy } }, include: { pagos: true } }),
     prisma.venta.findMany({ where: { fecha: { gte: inicioMes } } }),
     prisma.gasto.findMany({ where: { fecha: { gte: inicioMes } } }),
     getConfig(),
+    prisma.coeficienteMarca.findMany({ orderBy: { marca: "asc" } }),
+    prisma.producto.findMany({ distinct: ["marca"], select: { marca: true }, where: { marca: { not: "" } } }),
   ]);
 
   const facturacionHoy = ventasHoy.reduce((acc, v) => acc + toNumber(v.precioVenta) * v.cantidad, 0);
@@ -37,6 +39,8 @@ export default async function ResumenPage() {
       metrics={{ facturacionHoy, facturacionMes, gananciaEstimadaMes, ticketPromedioMes }}
       efectivoPorSucursal={[...efectivoPorSucursal.entries()].map(([label, value]) => ({ label, value }))}
       config={serialize(config)}
+      coeficientesMarca={serialize(coeficientesMarca)}
+      marcasProductos={marcasProductos.map((p) => p.marca)}
     />
   );
 }

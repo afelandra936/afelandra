@@ -41,6 +41,27 @@ export async function quitarItemLista(campo: ListaCampo, valor: string) {
   revalidateAll();
 }
 
+export async function guardarCoeficientesMarca(
+  marca: string,
+  data: { debito: number; credito3: number; credito6: number; contado: number }
+) {
+  await requireRole("admin");
+  const nombre = marca.trim();
+  if (!nombre) throw new Error("La marca es obligatoria");
+  await prisma.coeficienteMarca.upsert({
+    where: { marca: nombre },
+    update: data,
+    create: { marca: nombre, ...data },
+  });
+  revalidateAll();
+}
+
+export async function eliminarCoeficientesMarca(marca: string) {
+  await requireRole("admin");
+  await prisma.coeficienteMarca.deleteMany({ where: { marca } });
+  revalidateAll();
+}
+
 export async function actualizarPin(role: "admin" | "empleada", pin: string) {
   await requireRole("admin");
   await getConfig();

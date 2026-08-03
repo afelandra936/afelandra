@@ -2,8 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
-import { getConfig } from "@/lib/config";
-import { precioUnitario, factorPromocion } from "@/lib/pricing";
+import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
+import { precioUnitario, factorPromocion, resolverCoeficientes } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@/app/generated/prisma/client";
 
@@ -45,6 +45,7 @@ export async function registrarVentaCarrito(
   }
 
   const config = await getConfig();
+  const coeficientesPorMarca = await getCoeficientesPorMarca();
 
   let clienteId: string | null = null;
   const clienteNombre = input.clienteNombre?.trim() || null;
@@ -81,11 +82,12 @@ export async function registrarVentaCarrito(
 
     const costoUnitario = Number(producto.costo);
     const factor = factorPromocion(promocion, item.cantidad);
+    const coefProducto = resolverCoeficientes(producto.marca, config, coeficientesPorMarca);
 
     const pagosBase: PagoInput[] =
       item.pagos && item.pagos.length > 0
         ? item.pagos
-        : [{ medio: item.medioPago, monto: precioUnitario(costoUnitario, item.medioPago, config) * item.cantidad }];
+        : [{ medio: item.medioPago, monto: precioUnitario(costoUnitario, item.medioPago, coefProducto) * item.cantidad }];
     const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor }));
     const precioTotal = pagos.reduce((acc, p) => acc + p.monto, 0);
     const precioVentaUnitario = precioTotal / item.cantidad;

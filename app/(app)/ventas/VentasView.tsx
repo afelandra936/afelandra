@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
-import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto } from "@/lib/pricing";
+import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
 import { buscarProductos, buscarProductoPorCodigo } from "@/lib/actions/productos";
 import { BarChart } from "@/components/charts/BarChart";
@@ -41,12 +41,14 @@ type PromocionDTO = {
 };
 
 type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
+type CoeficientesPorMarcaDTO = Record<string, ConfigDTO>;
 
 type Props = {
   role: Role;
   ventas: VentaDTO[];
   clientesNombres: string[];
   config: ConfigDTO;
+  coeficientesPorMarca: CoeficientesPorMarcaDTO;
   charts: { topProductos: ChartEntry[]; topProveedores: ChartEntry[]; medios: ChartEntry[]; vendedores: ChartEntry[] } | null;
   promociones: PromocionDTO[];
 };
@@ -174,12 +176,18 @@ function nuevoItem(): CartItem {
   };
 }
 
-function totalItem(item: CartItem, config: ConfigDTO, promociones: PromocionDTO[]): number {
+function totalItem(
+  item: CartItem,
+  config: ConfigDTO,
+  coeficientesPorMarca: CoeficientesPorMarcaDTO,
+  promociones: PromocionDTO[]
+): number {
   if (!item.producto) return 0;
   const cantidad = Number(item.cantidad) || 0;
   const promocion = promociones.find((p) => p.id === item.promocionId) ?? null;
   const factor = factorPromocion(promocion, cantidad);
-  return precioUnitario(item.producto.costo, item.medioPago, config) * cantidad * factor;
+  const coef = resolverCoeficientes(item.producto.marca, config, coeficientesPorMarca);
+  return precioUnitario(item.producto.costo, item.medioPago, coef) * cantidad * factor;
 }
 
 type ItemConProducto = CartItem & { producto: ProductoDTO };
@@ -196,6 +204,7 @@ function calcularDivisionCarrito(
   pagosParciales: { medio: string; monto: string }[],
   medioResto: string,
   config: ConfigDTO,
+  coeficientesPorMarca: CoeficientesPorMarcaDTO,
   promociones: PromocionDTO[]
 ): {
   porItem: { id: string; pagos: { medio: string; monto: number }[]; total: number }[];
@@ -204,7 +213,13 @@ function calcularDivisionCarrito(
 } {
   const costoTotalCarrito = itemsValidos.reduce((acc, it) => acc + it.producto.costo * (Number(it.cantidad) || 0), 0);
   const pagosNum = pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 }));
-  const montoResto = calcularMontoResto(costoTotalCarrito, pagosNum, medioResto, config);
+  // El "resto" se calcula con un único juego de coeficientes: si todo el carrito es
+  // de una misma marca se usan los suyos, si hay marcas mezcladas no hay un coeficiente
+  // "correcto" único y se cae a los generales.
+  const marcasEnCarrito = new Set(itemsValidos.map((it) => it.producto.marca));
+  const marcaUnica = marcasEnCarrito.size === 1 ? [...marcasEnCarrito][0] : null;
+  const coefResto = marcaUnica ? resolverCoeficientes(marcaUnica, config, coeficientesPorMarca) : config;
+  const montoResto = calcularMontoResto(costoTotalCarrito, pagosNum, medioResto, coefResto);
   const pagosGlobal = [...pagosNum, { medio: medioResto, monto: montoResto }];
 
   let total = 0;
@@ -224,7 +239,7 @@ function calcularDivisionCarrito(
 }
 
 function NuevaVentaForm(props: Props) {
-  const { config } = props;
+  const { config, coeficientesPorMarca } = props;
 
   const [codigoBarras, setCodigoBarras] = useState("");
   const [items, setItems] = useState<CartItem[]>([nuevoItem()]);
@@ -241,11 +256,11 @@ function NuevaVentaForm(props: Props) {
 
   const itemsValidos = items.filter((it): it is ItemConProducto => it.producto !== null);
   const divisionCarrito = dividido
-    ? calcularDivisionCarrito(itemsValidos, pagosParciales, medioResto, config, props.promociones)
+    ? calcularDivisionCarrito(itemsValidos, pagosParciales, medioResto, config, coeficientesPorMarca, props.promociones)
     : null;
   const total = divisionCarrito
     ? divisionCarrito.total
-    : items.reduce((acc, item) => acc + totalItem(item, config, props.promociones), 0);
+    : items.reduce((acc, item) => acc + totalItem(item, config, coeficientesPorMarca, props.promociones), 0);
   const montoResto = divisionCarrito?.montoResto ?? 0;
 
   function addPagoParcial() {
@@ -402,6 +417,7 @@ function NuevaVentaForm(props: Props) {
                 key={item.id}
                 item={item}
                 config={config}
+                coeficientesPorMarca={coeficientesPorMarca}
                 promociones={props.promociones}
                 onChange={(patch) => updateItem(item.id, patch)}
                 onRemove={() => removeItem(item.id)}
@@ -486,6 +502,7 @@ function NuevaVentaForm(props: Props) {
 function CartItemRow({
   item,
   config,
+  coeficientesPorMarca,
   promociones,
   onChange,
   onRemove,
@@ -495,6 +512,7 @@ function CartItemRow({
 }: {
   item: CartItem;
   config: ConfigDTO;
+  coeficientesPorMarca: CoeficientesPorMarcaDTO;
   promociones: PromocionDTO[];
   onChange: (patch: Partial<CartItem>) => void;
   onRemove: () => void;
@@ -532,7 +550,7 @@ function CartItemRow({
     setMostrarSugerencias(false);
   }
 
-  const subtotal = subtotalOverride ?? totalItem(item, config, promociones);
+  const subtotal = subtotalOverride ?? totalItem(item, config, coeficientesPorMarca, promociones);
 
   return (
     <tr>

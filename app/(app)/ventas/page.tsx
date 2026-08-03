@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getConfig } from "@/lib/config";
+import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
 import { getSession } from "@/lib/auth";
 import { getVentasCharts } from "@/lib/reports";
 import { serialize } from "@/lib/serialize";
@@ -9,10 +9,11 @@ export default async function VentasPage() {
   const session = await getSession();
   const hoy = new Date();
 
-  const [ventas, clientes, config, charts, promociones] = await Promise.all([
+  const [ventas, clientes, config, coeficientesPorMarca, charts, promociones] = await Promise.all([
     prisma.venta.findMany({ orderBy: { fecha: "desc" }, take: 50, include: { pagos: true } }),
     prisma.cliente.findMany({ select: { nombre: true }, orderBy: { nombre: "asc" } }),
     getConfig(),
+    getCoeficientesPorMarca(),
     session!.role === "admin" ? getVentasCharts() : Promise.resolve(null),
     prisma.promocion.findMany({
       where: {
@@ -32,6 +33,7 @@ export default async function VentasPage() {
       ventas={serialize(ventas)}
       clientesNombres={clientes.map((c) => c.nombre)}
       config={serialize(config)}
+      coeficientesPorMarca={serialize(coeficientesPorMarca)}
       charts={charts}
       promociones={serialize(promociones)}
     />

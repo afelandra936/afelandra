@@ -186,3 +186,14 @@ model Config {
   tiposAccesorio     String[] @default(["Cartera","Bandolera","Billetera","Indumentaria","Cintos"])
   updatedAt          DateTime @updatedAt
 }
+
+/** Coeficientes propios por marca; si una marca no tiene fila acá, se usan los de Config. */
+model CoeficienteMarca {
+  id        String   @id @default(cuid())
+  marca     String   @unique
+  debito    Decimal  @db.Decimal(6, 2)
+  credito3  Decimal  @db.Decimal(6, 2)
+  credito6  Decimal  @db.Decimal(6, 2)
+  contado   Decimal  @db.Decimal(6, 2)
+  updatedAt DateTime @updatedAt
+}

@@ -4,7 +4,14 @@ import { useRef, useState, useTransition } from "react";
 import { IconX } from "@tabler/icons-react";
 import { fmt } from "@/lib/format";
 import { BarList } from "@/components/ui/BarList";
-import { actualizarCoeficientes, actualizarPin, agregarItemLista, quitarItemLista } from "@/lib/actions/config";
+import {
+  actualizarCoeficientes,
+  actualizarPin,
+  agregarItemLista,
+  quitarItemLista,
+  guardarCoeficientesMarca,
+  eliminarCoeficientesMarca,
+} from "@/lib/actions/config";
 import { exportarDatos, importarDatos } from "@/lib/actions/backup";
 
 type ConfigDTO = {
@@ -18,14 +25,26 @@ type ConfigDTO = {
   tiposAccesorio: string[];
 };
 
+type CoeficienteMarcaDTO = {
+  marca: string;
+  debito: number;
+  credito3: number;
+  credito6: number;
+  contado: number;
+};
+
 export function ResumenView({
   metrics,
   efectivoPorSucursal,
   config,
+  coeficientesMarca,
+  marcasProductos,
 }: {
   metrics: { facturacionHoy: number; facturacionMes: number; gananciaEstimadaMes: number; ticketPromedioMes: number };
   efectivoPorSucursal: { label: string; value: number }[];
   config: ConfigDTO;
+  coeficientesMarca: CoeficienteMarcaDTO[];
+  marcasProductos: string[];
 }) {
   return (
     <div className="view active">
@@ -63,6 +82,11 @@ export function ResumenView({
       <div className="section-title">Coeficientes de precio</div>
       <div className="card" style={{ marginBottom: 24 }}>
         <CoeficientesForm config={config} />
+      </div>
+
+      <div className="section-title">Coeficientes propios por marca</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <CoeficientesMarcaSection coeficientesMarca={coeficientesMarca} marcasProductos={marcasProductos} />
       </div>
 
       <div className="section-title">Talles y tipos de producto</div>
@@ -131,6 +155,174 @@ function CoeficientesForm({ config }: { config: ConfigDTO }) {
       </div>
       <button className="btn small" type="submit" disabled={pending}>Guardar coeficientes</button>
       {saved && <span className="hint" style={{ marginLeft: 10 }}>Guardado.</span>}
+    </form>
+  );
+}
+
+function CoeficientesMarcaSection({
+  coeficientesMarca,
+  marcasProductos,
+}: {
+  coeficientesMarca: CoeficienteMarcaDTO[];
+  marcasProductos: string[];
+}) {
+  const [editando, setEditando] = useState<CoeficienteMarcaDTO | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleEliminar(marca: string) {
+    if (!confirm(`¿Quitar el coeficiente propio de "${marca}"? Volverá a usar los coeficientes generales.`)) return;
+    startTransition(() => eliminarCoeficientesMarca(marca));
+  }
+
+  return (
+    <div>
+      <p className="hint" style={{ marginBottom: 12 }}>
+        Las marcas sin coeficiente propio usan los coeficientes generales de arriba.
+      </p>
+      {coeficientesMarca.length > 0 && (
+        <table style={{ marginBottom: 16 }}>
+          <thead>
+            <tr>
+              <th>Marca</th>
+              <th>Débito/transf. (x)</th>
+              <th>3 cuotas (x)</th>
+              <th>6 cuotas (x)</th>
+              <th>Desc. efectivo (%)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {coeficientesMarca.map((c) => (
+              <tr key={c.marca}>
+                <td>{c.marca}</td>
+                <td className="num">{c.debito}</td>
+                <td className="num">{c.credito3}</td>
+                <td className="num">{c.credito6}</td>
+                <td className="num">{c.contado}</td>
+                <td style={{ display: "flex", gap: 6 }}>
+                  <button className="btn ghost small" type="button" onClick={() => setEditando(c)}>
+                    Editar
+                  </button>
+                  <button
+                    className="btn danger small"
+                    type="button"
+                    onClick={() => handleEliminar(c.marca)}
+                    disabled={pending}
+                  >
+                    Quitar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <CoeficienteMarcaForm
+        key={editando?.marca ?? "nuevo"}
+        editando={editando}
+        marcasProductos={marcasProductos}
+        onDone={() => setEditando(null)}
+      />
+    </div>
+  );
+}
+
+function CoeficienteMarcaForm({
+  editando,
+  marcasProductos,
+  onDone,
+}: {
+  editando: CoeficienteMarcaDTO | null;
+  marcasProductos: string[];
+  onDone: () => void;
+}) {
+  const [marca, setMarca] = useState(editando?.marca ?? "");
+  const [debito, setDebito] = useState(String(editando?.debito ?? ""));
+  const [credito3, setCredito3] = useState(String(editando?.credito3 ?? ""));
+  const [credito6, setCredito6] = useState(String(editando?.credito6 ?? ""));
+  const [contado, setContado] = useState(String(editando?.contado ?? ""));
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    if (!marca.trim()) {
+      setError("Elegí una marca");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await guardarCoeficientesMarca(marca, {
+          debito: Number(debito),
+          credito3: Number(credito3),
+          credito6: Number(credito6),
+          contado: Number(contado),
+        });
+        setSaved(true);
+        if (editando) onDone();
+        else {
+          setMarca("");
+          setDebito("");
+          setCredito3("");
+          setCredito6("");
+          setContado("");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error al guardar");
+      }
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {editando && <p className="hint" style={{ marginBottom: 8 }}>Editando coeficiente de &quot;{editando.marca}&quot;</p>}
+      <div className="config-grid">
+        <div className="field">
+          <label htmlFor="cfm-marca">Marca</label>
+          <input
+            id="cfm-marca"
+            value={marca}
+            onChange={(e) => setMarca(e.target.value)}
+            list="marcas-list"
+            placeholder="Grimoldi"
+            disabled={!!editando}
+          />
+          <datalist id="marcas-list">
+            {marcasProductos.map((m) => <option key={m} value={m} />)}
+          </datalist>
+        </div>
+        <div className="field">
+          <label htmlFor="cfm-debito">Débito / transferencia (x)</label>
+          <input id="cfm-debito" type="number" step="0.01" value={debito} onChange={(e) => setDebito(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cfm-credito3">Crédito 3 cuotas (x)</label>
+          <input id="cfm-credito3" type="number" step="0.01" value={credito3} onChange={(e) => setCredito3(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cfm-credito6">Crédito 6 cuotas (x)</label>
+          <input id="cfm-credito6" type="number" step="0.01" value={credito6} onChange={(e) => setCredito6(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cfm-contado">Descuento efectivo (%)</label>
+          <input id="cfm-contado" type="number" step="0.5" value={contado} onChange={(e) => setContado(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
+        <button className="btn small" type="submit" disabled={pending}>
+          {editando ? "Guardar cambios" : "Agregar coeficiente por marca"}
+        </button>
+        {editando && (
+          <button className="btn ghost small" type="button" onClick={onDone} disabled={pending}>
+            Cancelar
+          </button>
+        )}
+        {saved && !editando && <span className="hint">Guardado.</span>}
+      </div>
+      {error && <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 6 }}>{error}</p>}
     </form>
   );
 }

@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { getConfig } from "@/lib/config";
+import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
 import { serialize } from "@/lib/serialize";
 import { PresupuestosView } from "./PresupuestosView";
 
 export default async function PresupuestosPage() {
   const hoy = new Date();
 
-  const [config, promociones] = await Promise.all([
+  const [config, coeficientesPorMarca, promociones] = await Promise.all([
     getConfig(),
+    getCoeficientesPorMarca(),
     prisma.promocion.findMany({
       where: {
         activa: true,
@@ -20,5 +21,11 @@ export default async function PresupuestosPage() {
     }),
   ]);
 
-  return <PresupuestosView config={serialize(config)} promociones={serialize(promociones)} />;
+  return (
+    <PresupuestosView
+      config={serialize(config)}
+      coeficientesPorMarca={serialize(coeficientesPorMarca)}
+      promociones={serialize(promociones)}
+    />
+  );
 }

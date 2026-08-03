@@ -19,6 +19,17 @@ export type CoeficientesConfig = {
   contado: number | string | Prisma.Decimal;
 };
 
+export type CoeficientesPorMarca = Record<string, CoeficientesConfig>;
+
+/** Coeficientes de una marca si tiene configuración propia; si no, los generales. */
+export function resolverCoeficientes(
+  marca: string,
+  general: CoeficientesConfig,
+  porMarca: CoeficientesPorMarca
+): CoeficientesConfig {
+  return porMarca[marca] ?? general;
+}
+
 /** Coeficiente por el que se multiplica el costo según el medio de pago elegido. */
 export function ratioMedio(medio: string, config: CoeficientesConfig): number {
   const debito = toNumber(config.debito);
