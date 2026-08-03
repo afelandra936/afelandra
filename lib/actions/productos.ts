@@ -145,12 +145,18 @@ export async function actualizarProducto(
   revalidatePath("/stock");
 }
 
-/** Aplica un costo a todas las variantes de talle de un mismo modelo (mismo nombre). */
-export async function actualizarCostoTodosTalles(nombre: string, costo: number) {
+/**
+ * Aplica un costo a un conjunto puntual de productos (todas las variantes de talle
+ * de un mismo modelo). Recibe los IDs explícitos en vez de buscar por nombre: así no
+ * depende de que el texto del nombre coincida exactamente entre filas (mayúsculas,
+ * espacios) — se actualiza exactamente lo que el usuario ve agrupado en la tabla.
+ */
+export async function actualizarCostoTodosTalles(ids: string[], costo: number) {
   await requireRole("admin");
   if (!(costo > 0)) throw new Error("El costo debe ser mayor a 0");
+  if (ids.length === 0) return;
 
-  await prisma.producto.updateMany({ where: { nombre }, data: { costo } });
+  await prisma.producto.updateMany({ where: { id: { in: ids } }, data: { costo } });
   revalidatePath("/stock");
 }
 

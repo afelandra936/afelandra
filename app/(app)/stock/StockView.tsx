@@ -100,6 +100,19 @@ export function StockView(props: Props) {
     return resultado;
   }, [productosFiltrados, tiposAccesorioSet, props.tallesCalzado, props.tallesIndumentaria]);
 
+  // IDs de todas las variantes de talle de cada modelo, agrupadas por nombre exacto,
+  // calculado sobre TODOS los productos (no solo los filtrados) para que "aplicar a
+  // todos los talles" alcance también a los que estén ocultos por una búsqueda activa.
+  const idsPorNombre = useMemo(() => {
+    const mapa = new Map<string, string[]>();
+    for (const p of productos) {
+      const arr = mapa.get(p.nombre);
+      if (arr) arr.push(p.id);
+      else mapa.set(p.nombre, [p.id]);
+    }
+    return mapa;
+  }, [productos]);
+
   function abrirNuevo() {
     setSeed(null);
     setShowForm(true);
@@ -241,6 +254,7 @@ export function StockView(props: Props) {
                   onDuplicate={abrirDuplicado}
                   tiposCalzado={props.tiposCalzado}
                   tiposAccesorio={props.tiposAccesorio}
+                  idsMismoModelo={idsPorNombre.get(p.nombre) ?? [p.id]}
                 />
               ))}
             </tbody>
@@ -259,6 +273,7 @@ function ProductoRow({
   onDuplicate,
   tiposCalzado,
   tiposAccesorio,
+  idsMismoModelo,
 }: {
   producto: ProductoDTO;
   role: Role;
@@ -267,6 +282,7 @@ function ProductoRow({
   onDuplicate: (producto: ProductoDTO) => void;
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  idsMismoModelo: string[];
 }) {
   const isAdmin = role === "admin";
   const [editing, setEditing] = useState(false);
@@ -311,7 +327,7 @@ function ProductoRow({
     setError(null);
     startTransition(async () => {
       try {
-        await actualizarCostoTodosTalles(producto.nombre, Number(costo));
+        await actualizarCostoTodosTalles(idsMismoModelo, Number(costo));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al guardar");
       }
@@ -350,6 +366,7 @@ function ProductoRow({
         producto={producto}
         tiposCalzado={tiposCalzado}
         tiposAccesorio={tiposAccesorio}
+        idsMismoModelo={idsMismoModelo}
         onDone={() => setEditing(false)}
         onCancel={() => setEditing(false)}
       />
@@ -477,12 +494,14 @@ function EditProductoRow({
   producto,
   tiposCalzado,
   tiposAccesorio,
+  idsMismoModelo,
   onDone,
   onCancel,
 }: {
   producto: ProductoDTO;
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  idsMismoModelo: string[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -518,7 +537,7 @@ function EditProductoRow({
           observaciones: observaciones.trim() || null,
         });
         if (aplicarCostoATodos && costoCambio) {
-          await actualizarCostoTodosTalles(nombre, Number(costo));
+          await actualizarCostoTodosTalles(idsMismoModelo, Number(costo));
         }
         onDone();
       } catch (e) {
