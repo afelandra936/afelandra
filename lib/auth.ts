@@ -56,3 +56,8 @@ export async function requireRole(...roles: Role[]) {
   }
   return session;
 }
+
+/** Normaliza una respuesta de seguridad antes de hashear/comparar, para que mayúsculas y espacios no importen. */
+export function normalizarRespuesta(respuesta: string): string {
+  return respuesta.trim().toLowerCase();
+}

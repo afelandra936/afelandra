@@ -7,6 +7,7 @@ import { BarList } from "@/components/ui/BarList";
 import {
   actualizarCoeficientes,
   actualizarPin,
+  actualizarPreguntaSeguridad,
   agregarItemLista,
   quitarItemLista,
   guardarCoeficientesMarca,
@@ -23,6 +24,8 @@ type ConfigDTO = {
   tallesIndumentaria: string[];
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  preguntaAdmin: string | null;
+  preguntaVendedor: string | null;
 };
 
 type CoeficienteMarcaDTO = {
@@ -101,6 +104,20 @@ export function ResumenView({
       <div className="card cols-2" style={{ marginBottom: 24 }}>
         <PinForm role="admin" label="Código de acceso — Afelandra (admin)" />
         <PinForm role="empleada" label="Código de acceso — Vendedor" />
+      </div>
+
+      <div className="section-title">Recuperación de código olvidado</div>
+      <div className="card cols-2" style={{ marginBottom: 24 }}>
+        <PreguntaSeguridadForm
+          role="admin"
+          label="Pregunta de seguridad — Afelandra (admin)"
+          preguntaActual={config.preguntaAdmin}
+        />
+        <PreguntaSeguridadForm
+          role="empleada"
+          label="Pregunta de seguridad — Vendedor"
+          preguntaActual={config.preguntaVendedor}
+        />
       </div>
 
       <div className="section-title">Backup</div>
@@ -390,6 +407,53 @@ function PinForm({ role, label }: { role: "admin" | "empleada"; label: string })
     <form onSubmit={handleSubmit} className="field">
       <label>{label}</label>
       <input type="password" placeholder="Dejar vacío para quitar el código" value={pin} onChange={(e) => setPin(e.target.value)} style={{ marginBottom: 8, maxWidth: 220 }} />
+      <div>
+        <button className="btn small" type="submit" disabled={pending}>Guardar</button>
+        {saved && <span className="hint" style={{ marginLeft: 10 }}>Guardado.</span>}
+      </div>
+    </form>
+  );
+}
+
+function PreguntaSeguridadForm({
+  role,
+  label,
+  preguntaActual,
+}: {
+  role: "admin" | "empleada";
+  label: string;
+  preguntaActual: string | null;
+}) {
+  const [pregunta, setPregunta] = useState(preguntaActual ?? "");
+  const [respuesta, setRespuesta] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaved(false);
+    startTransition(async () => {
+      await actualizarPreguntaSeguridad(role, pregunta, respuesta);
+      setSaved(true);
+      setRespuesta("");
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="field">
+      <label>{label}</label>
+      <input
+        placeholder="Pregunta (ej: ¿Nombre de tu primera mascota?)"
+        value={pregunta}
+        onChange={(e) => setPregunta(e.target.value)}
+        style={{ marginBottom: 6, maxWidth: 280 }}
+      />
+      <input
+        placeholder={preguntaActual ? "Nueva respuesta (dejar vacío para quitar la pregunta)" : "Respuesta"}
+        value={respuesta}
+        onChange={(e) => setRespuesta(e.target.value)}
+        style={{ marginBottom: 8, maxWidth: 280 }}
+      />
       <div>
         <button className="btn small" type="submit" disabled={pending}>Guardar</button>
         {saved && <span className="hint" style={{ marginLeft: 10 }}>Guardado.</span>}

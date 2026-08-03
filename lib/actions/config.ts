@@ -2,7 +2,7 @@
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
+import { requireRole, normalizarRespuesta } from "@/lib/auth";
 import { getConfig } from "@/lib/config";
 import { revalidatePath } from "next/cache";
 
@@ -68,4 +68,22 @@ export async function actualizarPin(role: "admin" | "empleada", pin: string) {
   const hash = pin.trim() ? await bcrypt.hash(pin.trim(), 10) : null;
   const campo = role === "admin" ? "pinAdminHash" : "pinVendedorHash";
   await prisma.config.update({ where: { id: 1 }, data: { [campo]: hash } });
+}
+
+export async function actualizarPreguntaSeguridad(role: "admin" | "empleada", pregunta: string, respuesta: string) {
+  await requireRole("admin");
+  await getConfig();
+
+  const campoPregunta = role === "admin" ? "preguntaAdmin" : "preguntaVendedor";
+  const campoHash = role === "admin" ? "respuestaAdminHash" : "respuestaVendedorHash";
+  const preguntaTrim = pregunta.trim();
+  const respuestaTrim = respuesta.trim();
+
+  if (!preguntaTrim || !respuestaTrim) {
+    await prisma.config.update({ where: { id: 1 }, data: { [campoPregunta]: null, [campoHash]: null } });
+    return;
+  }
+
+  const hash = await bcrypt.hash(normalizarRespuesta(respuestaTrim), 10);
+  await prisma.config.update({ where: { id: 1 }, data: { [campoPregunta]: preguntaTrim, [campoHash]: hash } });
 }

@@ -180,6 +180,10 @@ model Config {
   contado            Decimal  @default(10)   @db.Decimal(6, 2) // % descuento efectivo
   pinAdminHash       String?
   pinVendedorHash    String?
+  preguntaAdmin         String?
+  respuestaAdminHash    String?
+  preguntaVendedor      String?
+  respuestaVendedorHash String?
   talles             String[] @default(["35","36","37","38","39","40","41"])
   tallesIndumentaria String[] @default(["S","M","L","XL","XXL","XXXL"])
   tiposCalzado       String[] @default(["Zueco","Bota","Borcego","Zapatilla","Sandalia","Botineta","Acordonado","Mocasín","Estileto","Texana"])
