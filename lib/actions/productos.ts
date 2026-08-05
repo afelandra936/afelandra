@@ -10,6 +10,7 @@ type TalleInput = { talle: string; stock: number; codigo?: string };
 export type ProductoBusqueda = {
   id: string;
   nombre: string;
+  color: string;
   talle: string;
   marca: string;
   costo: number;
@@ -20,6 +21,7 @@ export type ProductoBusqueda = {
 function aBusqueda(p: {
   id: string;
   nombre: string;
+  color: string;
   talle: string;
   marca: string;
   costo: unknown;
@@ -29,12 +31,20 @@ function aBusqueda(p: {
   return {
     id: p.id,
     nombre: p.nombre,
+    color: p.color,
     talle: p.talle,
     marca: p.marca,
     costo: toNumber(p.costo as never),
     stock: p.stock,
     codigo: p.codigo,
   };
+}
+
+function compararTalle(a: string, b: string): number {
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+  return a.localeCompare(b, "es");
 }
 
 /** Búsqueda server-side para el autocompletado de Ventas: no manda el catálogo entero al cliente. */
@@ -58,6 +68,54 @@ export async function buscarProductoPorCodigo(codigo: string): Promise<ProductoB
 
   const producto = await prisma.producto.findUnique({ where: { codigo: c } });
   return producto ? aBusqueda(producto) : null;
+}
+
+/** Paso 1 de Ventas: nombres de modelo que coinciden con la búsqueda, con stock disponible. */
+export async function buscarModelos(query: string): Promise<string[]> {
+  await requireRole("admin", "empleada");
+  const q = query.trim();
+  if (!q) return [];
+
+  const productos = await prisma.producto.findMany({
+    where: { nombre: { contains: q, mode: "insensitive" }, stock: { gt: 0 } },
+    select: { nombre: true },
+    distinct: ["nombre"],
+    orderBy: { nombre: "asc" },
+    take: 15,
+  });
+  return productos.map((p) => p.nombre);
+}
+
+/**
+ * Paso 2 de Ventas: colores disponibles de un modelo, con el stock total de cada uno.
+ * Agrupa por color recortado (trim) para no mostrar como "colores" distintos filas que
+ * solo difieren en un espacio de más — el mismo tipo de dato sucio que ya se vio en
+ * nombres de producto (ver fix de actualizarCostoTodosTalles).
+ */
+export async function buscarColoresPorModelo(nombre: string): Promise<{ color: string; stock: number }[]> {
+  await requireRole("admin", "empleada");
+  const productos = await prisma.producto.findMany({
+    where: { nombre, stock: { gt: 0 } },
+    select: { color: true, stock: true },
+  });
+
+  const mapa = new Map<string, number>();
+  for (const p of productos) {
+    const key = p.color.trim();
+    mapa.set(key, (mapa.get(key) ?? 0) + p.stock);
+  }
+  return [...mapa.entries()]
+    .map(([color, stock]) => ({ color, stock }))
+    .sort((a, b) => a.color.localeCompare(b.color, "es"));
+}
+
+/** Paso 3 de Ventas: variantes de talle de un modelo+color, ordenadas por talle. */
+export async function buscarVariantesPorModeloColor(nombre: string, color: string): Promise<ProductoBusqueda[]> {
+  await requireRole("admin", "empleada");
+  const colorTrim = color.trim();
+  const productos = await prisma.producto.findMany({ where: { nombre, stock: { gt: 0 } } });
+  const filtrados = productos.filter((p) => p.color.trim() === colorTrim);
+  return filtrados.map(aBusqueda).sort((a, b) => compararTalle(a.talle, b.talle));
 }
 
 export async function crearProducto(data: {

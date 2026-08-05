@@ -5,7 +5,12 @@ import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
-import { buscarProductos, buscarProductoPorCodigo } from "@/lib/actions/productos";
+import {
+  buscarProductoPorCodigo,
+  buscarModelos,
+  buscarColoresPorModelo,
+  buscarVariantesPorModeloColor,
+} from "@/lib/actions/productos";
 import { BarChart } from "@/components/charts/BarChart";
 import type { Role } from "@/lib/auth";
 import type { ChartEntry } from "@/lib/reports";
@@ -13,6 +18,7 @@ import type { ChartEntry } from "@/lib/reports";
 type ProductoDTO = {
   id: string;
   nombre: string;
+  color: string;
   talle: string;
   marca: string;
   costo: number;
@@ -152,14 +158,12 @@ function VentaRow({ venta }: { venta: VentaDTO }) {
   );
 }
 
-function labelProducto(p: ProductoDTO): string {
-  return `${p.nombre} ${p.talle ? `(${p.talle})` : "(Único)"} — ${p.marca} — stock ${p.stock}`;
-}
-
 type CartItem = {
   id: string;
+  modeloQuery: string;
+  modelo: string | null;
+  color: string | null;
   producto: ProductoDTO | null;
-  productoQuery: string;
   cantidad: string;
   medioPago: string;
   promocionId: string;
@@ -168,8 +172,10 @@ type CartItem = {
 function nuevoItem(): CartItem {
   return {
     id: Math.random().toString(36).slice(2),
+    modeloQuery: "",
+    modelo: null,
+    color: null,
     producto: null,
-    productoQuery: "",
     cantidad: "1",
     medioPago: MEDIOS[0],
     promocionId: "",
@@ -284,12 +290,13 @@ function NuevaVentaForm(props: Props) {
   }
 
   function agregarProductoAlCarrito(p: ProductoDTO) {
+    const patch = { modelo: p.nombre, modeloQuery: p.nombre, color: p.color, producto: p };
     setItems((prev) => {
       const ultimo = prev[prev.length - 1];
       if (ultimo && !ultimo.producto) {
-        return prev.map((it, i) => (i === prev.length - 1 ? { ...it, producto: p, productoQuery: labelProducto(p) } : it));
+        return prev.map((it, i) => (i === prev.length - 1 ? { ...it, ...patch } : it));
       }
-      return [...prev, { ...nuevoItem(), producto: p, productoQuery: labelProducto(p) }];
+      return [...prev, { ...nuevoItem(), ...patch }];
     });
   }
 
@@ -499,6 +506,141 @@ function NuevaVentaForm(props: Props) {
   );
 }
 
+/**
+ * Selección en 3 pasos para no confundir variantes de color parecidas (ej. "Tole negra"
+ * vs "Tole platino"): primero modelo, recién ahí colores DE ESE modelo, recién ahí
+ * talles DE ESE modelo+color. El color elegido queda siempre visible en un renglón aparte.
+ */
+function SelectorModeloColorTalle({
+  item,
+  onChange,
+}: {
+  item: CartItem;
+  onChange: (patch: Partial<CartItem>) => void;
+}) {
+  const [sugerenciasModelo, setSugerenciasModelo] = useState<string[]>([]);
+  const [mostrarSugerenciasModelo, setMostrarSugerenciasModelo] = useState(false);
+  const [buscandoModelo, setBuscandoModelo] = useState(false);
+  const [colores, setColores] = useState<{ color: string; stock: number }[]>([]);
+  const [cargandoColores, setCargandoColores] = useState(false);
+  const [variantes, setVariantes] = useState<ProductoDTO[]>([]);
+  const [cargandoVariantes, setCargandoVariantes] = useState(false);
+
+  useEffect(() => {
+    if (item.modelo && item.modeloQuery === item.modelo) {
+      setSugerenciasModelo([]);
+      return;
+    }
+    if (!item.modeloQuery.trim()) {
+      setSugerenciasModelo([]);
+      setBuscandoModelo(false);
+      return;
+    }
+    setBuscandoModelo(true);
+    const timer = setTimeout(async () => {
+      const resultados = await buscarModelos(item.modeloQuery);
+      setSugerenciasModelo(resultados);
+      setBuscandoModelo(false);
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.modeloQuery]);
+
+  useEffect(() => {
+    if (!item.modelo) {
+      setColores([]);
+      return;
+    }
+    setCargandoColores(true);
+    buscarColoresPorModelo(item.modelo).then((res) => {
+      setColores(res);
+      setCargandoColores(false);
+    });
+  }, [item.modelo]);
+
+  useEffect(() => {
+    if (!item.modelo || !item.color) {
+      setVariantes([]);
+      return;
+    }
+    setCargandoVariantes(true);
+    buscarVariantesPorModeloColor(item.modelo, item.color).then((res) => {
+      setVariantes(res);
+      setCargandoVariantes(false);
+    });
+  }, [item.modelo, item.color]);
+
+  function elegirModelo(nombre: string) {
+    onChange({ modelo: nombre, modeloQuery: nombre, color: null, producto: null });
+    setSugerenciasModelo([]);
+    setMostrarSugerenciasModelo(false);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ position: "relative" }}>
+        <input
+          placeholder="Buscar modelo..."
+          autoComplete="off"
+          value={item.modeloQuery}
+          onChange={(e) => {
+            const texto = e.target.value;
+            onChange({
+              modeloQuery: texto,
+              ...(item.modelo && texto !== item.modelo ? { modelo: null, color: null, producto: null } : {}),
+            });
+            setMostrarSugerenciasModelo(true);
+          }}
+          onFocus={() => setMostrarSugerenciasModelo(true)}
+          onBlur={() => setTimeout(() => setMostrarSugerenciasModelo(false), 150)}
+        />
+        {mostrarSugerenciasModelo && (buscandoModelo || sugerenciasModelo.length > 0) && (
+          <ul className="autocomplete-list">
+            {buscandoModelo ? (
+              <li className="autocomplete-hint">Buscando...</li>
+            ) : (
+              sugerenciasModelo.map((nombre) => (
+                <li key={nombre} onMouseDown={(e) => { e.preventDefault(); elegirModelo(nombre); }}>
+                  {nombre}
+                </li>
+              ))
+            )}
+          </ul>
+        )}
+      </div>
+
+      {item.modelo && (
+        <select value={item.color ?? ""} onChange={(e) => onChange({ color: e.target.value || null, producto: null })} disabled={cargandoColores}>
+          <option value="">{cargandoColores ? "Cargando colores..." : "Elegí un color..."}</option>
+          {colores.map((c) => (
+            <option key={c.color} value={c.color}>{c.color} ({c.stock} en stock)</option>
+          ))}
+        </select>
+      )}
+
+      {item.modelo && item.color && (
+        <select
+          value={item.producto?.id ?? ""}
+          onChange={(e) => onChange({ producto: variantes.find((v) => v.id === e.target.value) ?? null })}
+          disabled={cargandoVariantes}
+        >
+          <option value="">{cargandoVariantes ? "Cargando talles..." : "Elegí un talle..."}</option>
+          {variantes.map((v) => (
+            <option key={v.id} value={v.id}>{v.talle || "Único"} — {v.stock} en stock</option>
+          ))}
+        </select>
+      )}
+
+      {item.modelo && item.color && (
+        <div className="hint" style={{ fontWeight: 600 }}>
+          {item.modelo} · Color: {item.color}
+          {item.producto && ` · Talle: ${item.producto.talle || "Único"}`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CartItemRow({
   item,
   config,
@@ -520,69 +662,12 @@ function CartItemRow({
   subtotalOverride?: number;
   dividido: boolean;
 }) {
-  const [sugerencias, setSugerencias] = useState<ProductoDTO[]>([]);
-  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
-  const [buscando, setBuscando] = useState(false);
-
-  useEffect(() => {
-    if (item.producto && item.productoQuery === labelProducto(item.producto)) {
-      setSugerencias([]);
-      return;
-    }
-    if (!item.productoQuery.trim()) {
-      setSugerencias([]);
-      setBuscando(false);
-      return;
-    }
-    setBuscando(true);
-    const timer = setTimeout(async () => {
-      const resultados = await buscarProductos(item.productoQuery);
-      setSugerencias(resultados);
-      setBuscando(false);
-    }, 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.productoQuery]);
-
-  function elegirProducto(p: ProductoDTO) {
-    onChange({ producto: p, productoQuery: labelProducto(p) });
-    setSugerencias([]);
-    setMostrarSugerencias(false);
-  }
-
   const subtotal = subtotalOverride ?? totalItem(item, config, coeficientesPorMarca, promociones);
 
   return (
     <tr>
-      <td style={{ position: "relative", minWidth: 220 }}>
-        <input
-          placeholder="Buscar por nombre..."
-          autoComplete="off"
-          value={item.productoQuery}
-          onChange={(e) => {
-            const texto = e.target.value;
-            onChange({
-              productoQuery: texto,
-              ...(item.producto && texto !== labelProducto(item.producto) ? { producto: null } : {}),
-            });
-            setMostrarSugerencias(true);
-          }}
-          onFocus={() => setMostrarSugerencias(true)}
-          onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
-        />
-        {mostrarSugerencias && (buscando || sugerencias.length > 0) && (
-          <ul className="autocomplete-list">
-            {buscando ? (
-              <li className="autocomplete-hint">Buscando...</li>
-            ) : (
-              sugerencias.map((p) => (
-                <li key={p.id} onMouseDown={(e) => { e.preventDefault(); elegirProducto(p); }}>
-                  {labelProducto(p)}
-                </li>
-              ))
-            )}
-          </ul>
-        )}
+      <td style={{ minWidth: 240 }}>
+        <SelectorModeloColorTalle item={item} onChange={onChange} />
       </td>
       <td>
         <input
