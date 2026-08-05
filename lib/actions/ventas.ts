@@ -67,6 +67,11 @@ export async function registrarVentaCarrito(
   for (const item of input.items) {
     const producto = await prisma.producto.findUnique({ where: { id: item.productoId } });
     if (!producto) return { error: "Un producto del carrito ya no existe" };
+    if (item.cantidad > producto.stock) {
+      return {
+        error: `No hay suficiente stock de "${producto.nombre}" (talle ${producto.talle || "Único"}): quedan ${producto.stock}`,
+      };
+    }
 
     let promocion: { id: string; nombre: string; tipo: string; valorPorcentaje: Prisma.Decimal | null } | null = null;
     if (item.promocionId) {

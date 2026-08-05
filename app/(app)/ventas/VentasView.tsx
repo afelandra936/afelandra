@@ -676,7 +676,12 @@ function CartItemRow({
           min={1}
           max={item.producto?.stock ?? undefined}
           value={item.cantidad}
-          onChange={(e) => onChange({ cantidad: e.target.value })}
+          onChange={(e) => {
+            const stock = item.producto?.stock;
+            const valor = e.target.value;
+            const clamped = stock !== undefined && Number(valor) > stock ? String(stock) : valor;
+            onChange({ cantidad: clamped });
+          }}
           style={{ width: 70 }}
         />
       </td>
