@@ -69,22 +69,22 @@ export function StockView(props: Props) {
   // que no tocan createdAt). Dentro del grupo, se subagrupa por color (alfabético) y
   // dentro de cada color los talles siguen el orden configurado en Resumen (no
   // alfabético, para que S/M/L/XL no queden desordenados).
-  const productosAgrupados = useMemo(() => {
-    const grupos = new Map<string, ProductoDTO[]>();
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, ProductoDTO[]>();
     for (const p of productosFiltrados) {
-      const arr = grupos.get(p.nombre);
+      const arr = mapa.get(p.nombre);
       if (arr) arr.push(p);
-      else grupos.set(p.nombre, [p]);
+      else mapa.set(p.nombre, [p]);
     }
 
-    const gruposConFecha = [...grupos.values()].map((items) => ({
+    const gruposConFecha = [...mapa.entries()].map(([nombre, items]) => ({
+      nombre,
       items,
       maxCreatedAt: items.reduce((max, p) => (p.createdAt > max ? p.createdAt : max), items[0].createdAt),
     }));
     gruposConFecha.sort((a, b) => (a.maxCreatedAt < b.maxCreatedAt ? 1 : a.maxCreatedAt > b.maxCreatedAt ? -1 : 0));
 
-    const resultado: ProductoDTO[] = [];
-    for (const grupo of gruposConFecha) {
+    return gruposConFecha.map((grupo) => {
       const esAcc = tiposAccesorioSet.has(grupo.items[0].tipo);
       const ordenTalles = esAcc ? props.tallesIndumentaria : props.tallesCalzado;
       const talleIndex = (talle: string) => (talle ? ordenTalles.indexOf(talle) : -1);
@@ -95,9 +95,8 @@ export function StockView(props: Props) {
         const ib = talleIndex(b.talle);
         return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
       });
-      resultado.push(...itemsOrdenados);
-    }
-    return resultado;
+      return { nombre: grupo.nombre, tipo: grupo.items[0].tipo, esAccesorio: esAcc, items: itemsOrdenados };
+    });
   }, [productosFiltrados, tiposAccesorioSet, props.tallesCalzado, props.tallesIndumentaria]);
 
   // IDs de todas las variantes de talle de cada modelo, agrupadas por nombre exacto,
@@ -228,47 +227,73 @@ export function StockView(props: Props) {
         ) : productosFiltrados.length === 0 ? (
           <p className="empty">No se encontraron productos para &quot;{busqueda}&quot;.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Tipo</th>
-                <th>Marca</th>
-                <th>Color</th>
-                <th>Talle</th>
-                <th>Código</th>
-                {isAdmin && <th>Costo</th>}
-                <th>Stock</th>
-                <th>Observaciones</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {productosAgrupados.map((p) => (
-                <ProductoRow
-                  key={p.id}
-                  producto={p}
-                  role={role}
-                  esAccesorio={tiposAccesorioSet.has(p.tipo)}
-                  sinMovimiento={p.stock > 0 && sinMovimientoSet.has(p.id)}
-                  onDuplicate={abrirDuplicado}
-                  tiposCalzado={props.tiposCalzado}
-                  tiposAccesorio={props.tiposAccesorio}
-                  idsMismoModelo={idsPorNombre.get(p.nombre) ?? [p.id]}
-                />
-              ))}
-            </tbody>
-          </table>
+          grupos.map((grupo) => (
+            <ModeloGroupSection
+              key={grupo.nombre}
+              grupo={grupo}
+              role={role}
+              onDuplicate={abrirDuplicado}
+              tiposCalzado={props.tiposCalzado}
+              tiposAccesorio={props.tiposAccesorio}
+              idsMismoModelo={idsPorNombre.get(grupo.nombre) ?? []}
+              sinMovimientoSet={sinMovimientoSet}
+            />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function ProductoRow({
+function ModeloGroupSection({
+  grupo,
+  role,
+  onDuplicate,
+  tiposCalzado,
+  tiposAccesorio,
+  idsMismoModelo,
+  sinMovimientoSet,
+}: {
+  grupo: { nombre: string; tipo: string; esAccesorio: boolean; items: ProductoDTO[] };
+  role: Role;
+  onDuplicate: (producto: ProductoDTO) => void;
+  tiposCalzado: string[];
+  tiposAccesorio: string[];
+  idsMismoModelo: string[];
+  sinMovimientoSet: Set<string>;
+}) {
+  const stockTotal = grupo.items.reduce((acc, p) => acc + p.stock, 0);
+
+  return (
+    <div className="modelo-group">
+      <div className="modelo-header">
+        <h3>{grupo.nombre}</h3>
+        <span className={`tag ${grupo.esAccesorio ? "accesorio" : "calzado"}`}>{grupo.tipo}</span>
+        <span className="hint" style={{ margin: 0 }}>
+          {grupo.items[0].marca} · {grupo.items.length} {grupo.items.length === 1 ? "variante" : "variantes"} · {stockTotal} en stock
+        </span>
+      </div>
+      <div className="variantes-grid">
+        {grupo.items.map((producto) => (
+          <VarianteChip
+            key={producto.id}
+            producto={producto}
+            role={role}
+            onDuplicate={onDuplicate}
+            tiposCalzado={tiposCalzado}
+            tiposAccesorio={tiposAccesorio}
+            idsMismoModelo={idsMismoModelo}
+            sinMovimiento={producto.stock > 0 && sinMovimientoSet.has(producto.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VarianteChip({
   producto,
   role,
-  esAccesorio,
   sinMovimiento,
   onDuplicate,
   tiposCalzado,
@@ -277,7 +302,6 @@ function ProductoRow({
 }: {
   producto: ProductoDTO;
   role: Role;
-  esAccesorio: boolean;
   sinMovimiento: boolean;
   onDuplicate: (producto: ProductoDTO) => void;
   tiposCalzado: string[];
@@ -286,48 +310,19 @@ function ProductoRow({
 }) {
   const isAdmin = role === "admin";
   const [editing, setEditing] = useState(false);
-  const [marca, setMarca] = useState(producto.marca);
-  const [color, setColor] = useState(producto.color);
-  const [codigo, setCodigo] = useState(producto.codigo ?? "");
-  const [costo, setCosto] = useState(String(producto.costo));
-  const [preguntarCostoTodos, setPreguntarCostoTodos] = useState(false);
   const [stock, setStock] = useState(String(producto.stock));
   const [sumando, setSumando] = useState(false);
   const [cantidadASumar, setCantidadASumar] = useState("1");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function commit(field: string, value: unknown) {
+  function commitStock() {
+    const nuevoStock = Number(stock);
+    if (nuevoStock === producto.stock) return;
     setError(null);
     startTransition(async () => {
       try {
-        await actualizarProducto(producto.id, { [field]: value });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Error al guardar");
-      }
-    });
-  }
-
-  function commitCosto() {
-    const nuevoCosto = Number(costo);
-    if (nuevoCosto === producto.costo) return;
-    setError(null);
-    startTransition(async () => {
-      try {
-        await actualizarProducto(producto.id, { costo: nuevoCosto });
-        setPreguntarCostoTodos(true);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Error al guardar");
-      }
-    });
-  }
-
-  function aplicarCostoATodos() {
-    setPreguntarCostoTodos(false);
-    setError(null);
-    startTransition(async () => {
-      try {
-        await actualizarCostoTodosTalles(idsMismoModelo, Number(costo));
+        await actualizarProducto(producto.id, { stock: nuevoStock });
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al guardar");
       }
@@ -348,18 +343,6 @@ function ProductoRow({
     });
   }
 
-  function handleEliminar() {
-    if (!confirm(`¿Eliminar ${producto.nombre} (talle ${producto.talle || "Único"})?`)) return;
-    setError(null);
-    startTransition(async () => {
-      try {
-        await eliminarProducto(producto.id);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Error");
-      }
-    });
-  }
-
   if (editing) {
     return (
       <EditProductoRow
@@ -367,126 +350,61 @@ function ProductoRow({
         tiposCalzado={tiposCalzado}
         tiposAccesorio={tiposAccesorio}
         idsMismoModelo={idsMismoModelo}
+        onDuplicate={onDuplicate}
         onDone={() => setEditing(false)}
         onCancel={() => setEditing(false)}
       />
     );
   }
 
+  const estado = esAgotado(producto) ? "out" : esStockBajo(producto) ? "low" : "";
+
   return (
-    <tr>
-      <td>{producto.nombre}</td>
-      <td>
-        <span className={`tag ${esAccesorio ? "accesorio" : "calzado"}`}>{producto.tipo}</span>
-      </td>
-      <td>
+    <div className={`variante-chip ${estado}`}>
+      <div className="variante-label">
+        {producto.color || "—"} / {producto.talle || "Único"}
+      </div>
+      <div className="variante-controls">
         {isAdmin ? (
-          <input value={marca} onChange={(e) => setMarca(e.target.value)} onBlur={() => marca !== producto.marca && commit("marca", marca)} style={{ width: 70 }} disabled={pending} />
-        ) : (
-          producto.marca
-        )}
-      </td>
-      <td>
-        {isAdmin ? (
-          <input value={color} onChange={(e) => setColor(e.target.value)} onBlur={() => color !== producto.color && commit("color", color)} style={{ width: 110 }} disabled={pending} />
-        ) : (
-          producto.color
-        )}
-      </td>
-      <td className="num">{producto.talle || "Único"}</td>
-      <td>
-        {isAdmin ? (
-          <input
-            value={codigo}
-            onChange={(e) => setCodigo(e.target.value)}
-            onBlur={() => codigo !== (producto.codigo ?? "") && commit("codigo", codigo || null)}
-            style={{ width: 80 }}
-            disabled={pending}
-          />
-        ) : (
-          producto.codigo ?? "—"
-        )}
-      </td>
-      {isAdmin && (
-        <td>
-          <input
-            className="num"
-            type="number"
-            step="0.01"
-            value={costo}
-            onChange={(e) => setCosto(e.target.value)}
-            onBlur={commitCosto}
-            style={{ width: 100 }}
-            disabled={pending}
-          />
-          {preguntarCostoTodos && (
-            <div className="hint" style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4, whiteSpace: "nowrap" }}>
-              ¿A todos los talles?
-              <button type="button" className="btn ghost small" onClick={aplicarCostoATodos} disabled={pending}>Sí</button>
-              <button type="button" className="btn ghost small" onClick={() => setPreguntarCostoTodos(false)} disabled={pending}>No</button>
-            </div>
-          )}
-        </td>
-      )}
-      <td>
-        {isAdmin ? (
-          <input
-            className={`num ${esAgotado(producto) ? "low-stock" : ""}`}
-            type="number"
-            value={stock}
-            onChange={(e) => setStock(e.target.value)}
-            onBlur={() => Number(stock) !== producto.stock && commit("stock", Number(stock))}
-            style={{ width: 55 }}
-            disabled={pending}
-          />
-        ) : sumando ? (
-          <span style={{ display: "flex", gap: 4 }}>
+          <>
             <input
-              className="num"
+              className="variante-stock"
+              type="number"
+              value={stock}
+              onChange={(e) => setStock(e.target.value)}
+              onBlur={commitStock}
+              disabled={pending}
+            />
+            <button className="icon-btn" type="button" onClick={() => setEditing(true)} disabled={pending} title="Editar">
+              <IconPencil size={14} />
+            </button>
+          </>
+        ) : sumando ? (
+          <>
+            <input
+              className="variante-stock"
               type="number"
               min={1}
               value={cantidadASumar}
               onChange={(e) => setCantidadASumar(e.target.value)}
-              style={{ width: 60 }}
               autoFocus
             />
             <button className="btn small" type="button" onClick={handleSumar} disabled={pending}>
               OK
             </button>
-          </span>
+          </>
         ) : (
-          <span className={`num ${esAgotado(producto) ? "out-stock" : esStockBajo(producto) ? "low-stock" : ""}`}>
-            {esAgotado(producto) ? "Agotado" : producto.stock}
-          </span>
-        )}
-      </td>
-      <td className="hint" style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={producto.observaciones ?? undefined}>
-        {producto.observaciones ?? "—"}
-      </td>
-      <td>
-        {isAdmin ? (
-          <span style={{ display: "flex", gap: 6 }}>
-            <button className="btn ghost small" type="button" onClick={() => setEditing(true)} disabled={pending} title="Editar">
-              <IconPencil size={14} />
-            </button>
-            <button className="btn ghost small" type="button" onClick={() => onDuplicate(producto)} disabled={pending} title="Duplicar">
-              <IconCopy size={14} />
-            </button>
-            <button className="btn danger small" type="button" onClick={handleEliminar} disabled={pending}>
-              <IconTrash size={14} />
-            </button>
-          </span>
-        ) : (
-          !sumando && (
+          <>
+            <span className="num">{esAgotado(producto) ? "Agotado" : producto.stock}</span>
             <button className="btn ghost small" type="button" onClick={() => setSumando(true)}>
               + Stock
             </button>
-          )
+          </>
         )}
-        {error && <div style={{ color: "var(--danger)", fontSize: 11, marginTop: 4 }}>{error}</div>}
-        {sinMovimiento && isAdmin && <div className="hint">Sin movimiento</div>}
-      </td>
-    </tr>
+      </div>
+      {error && <div style={{ color: "var(--danger)", fontSize: 11 }}>{error}</div>}
+      {sinMovimiento && isAdmin && <div className="hint" style={{ margin: 0 }}>Sin movimiento</div>}
+    </div>
   );
 }
 
@@ -495,6 +413,7 @@ function EditProductoRow({
   tiposCalzado,
   tiposAccesorio,
   idsMismoModelo,
+  onDuplicate,
   onDone,
   onCancel,
 }: {
@@ -502,6 +421,7 @@ function EditProductoRow({
   tiposCalzado: string[];
   tiposAccesorio: string[];
   idsMismoModelo: string[];
+  onDuplicate: (producto: ProductoDTO) => void;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -546,10 +466,22 @@ function EditProductoRow({
     });
   }
 
+  function handleEliminar() {
+    if (!confirm(`¿Eliminar ${producto.nombre} (talle ${producto.talle || "Único"})?`)) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        await eliminarProducto(producto.id);
+        onDone();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error");
+      }
+    });
+  }
+
   return (
-    <tr>
-      <td colSpan={10}>
-        <form className="inline-form" onSubmit={handleSubmit} style={{ marginBottom: 0 }}>
+    <div className="variante-edit">
+      <form className="inline-form" onSubmit={handleSubmit} style={{ marginBottom: 0 }}>
           <div className="field">
             <label htmlFor={`ep-nombre-${producto.id}`}>Nombre</label>
             <input id={`ep-nombre-${producto.id}`} value={nombre} onChange={(e) => setNombre(e.target.value)} required />
@@ -609,9 +541,24 @@ function EditProductoRow({
           {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
           <button className="btn" type="submit" disabled={pending}>Guardar</button>
           <button className="btn ghost" type="button" onClick={onCancel} disabled={pending}>Cancelar</button>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={() => {
+              onDuplicate(producto);
+              onCancel();
+            }}
+            disabled={pending}
+          >
+            <IconCopy size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+            Duplicar
+          </button>
+          <button className="btn danger" type="button" onClick={handleEliminar} disabled={pending}>
+            <IconTrash size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+            Eliminar
+          </button>
         </form>
-      </td>
-    </tr>
+      </div>
   );
 }
 
