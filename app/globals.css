@@ -701,10 +701,35 @@ tr:last-child td {
   font-size: 16px;
 }
 
+.modelo-header .btn {
+  margin-left: auto;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.color-row:last-child {
+  margin-bottom: 0;
+}
+
+.color-row-label {
+  width: 110px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .variantes-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  flex: 1;
 }
 
 .variante-chip {
@@ -715,7 +740,7 @@ tr:last-child td {
   border-radius: 8px;
   padding: 8px 10px;
   background: var(--surface-soft);
-  min-width: 130px;
+  min-width: 90px;
 }
 
 .variante-chip.low {

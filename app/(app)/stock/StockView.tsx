@@ -262,7 +262,17 @@ function ModeloGroupSection({
   idsMismoModelo: string[];
   sinMovimientoSet: Set<string>;
 }) {
+  const isAdmin = role === "admin";
   const stockTotal = grupo.items.reduce((acc, p) => acc + p.stock, 0);
+
+  // Los items ya vienen ordenados por color (y talle dentro de cada color), así que
+  // alcanza con cortar en un nuevo renglón cada vez que cambia el color.
+  const filasPorColor: { color: string; items: ProductoDTO[] }[] = [];
+  for (const producto of grupo.items) {
+    const fila = filasPorColor[filasPorColor.length - 1];
+    if (fila && fila.color === producto.color) fila.items.push(producto);
+    else filasPorColor.push({ color: producto.color, items: [producto] });
+  }
 
   return (
     <div className="modelo-group">
@@ -272,21 +282,32 @@ function ModeloGroupSection({
         <span className="hint" style={{ margin: 0 }}>
           {grupo.items[0].marca} · {grupo.items.length} {grupo.items.length === 1 ? "variante" : "variantes"} · {stockTotal} en stock
         </span>
+        {isAdmin && (
+          <button className="btn ghost small" type="button" onClick={() => onDuplicate(grupo.items[0])} title="Duplicar modelo">
+            <IconCopy size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+            Duplicar
+          </button>
+        )}
       </div>
-      <div className="variantes-grid">
-        {grupo.items.map((producto) => (
-          <VarianteChip
-            key={producto.id}
-            producto={producto}
-            role={role}
-            onDuplicate={onDuplicate}
-            tiposCalzado={tiposCalzado}
-            tiposAccesorio={tiposAccesorio}
-            idsMismoModelo={idsMismoModelo}
-            sinMovimiento={producto.stock > 0 && sinMovimientoSet.has(producto.id)}
-          />
-        ))}
-      </div>
+      {filasPorColor.map((fila) => (
+        <div className="color-row" key={fila.color}>
+          <span className="color-row-label">{fila.color || "—"}</span>
+          <div className="variantes-grid">
+            {fila.items.map((producto) => (
+              <VarianteChip
+                key={producto.id}
+                producto={producto}
+                role={role}
+                onDuplicate={onDuplicate}
+                tiposCalzado={tiposCalzado}
+                tiposAccesorio={tiposAccesorio}
+                idsMismoModelo={idsMismoModelo}
+                sinMovimiento={producto.stock > 0 && sinMovimientoSet.has(producto.id)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -361,9 +382,7 @@ function VarianteChip({
 
   return (
     <div className={`variante-chip ${estado}`}>
-      <div className="variante-label">
-        {producto.color || "—"} / {producto.talle || "Único"}
-      </div>
+      <div className="variante-label">{producto.talle || "Único"}</div>
       <div className="variante-controls">
         {isAdmin ? (
           <>
