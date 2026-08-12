@@ -264,6 +264,8 @@ function ModeloGroupSection({
 }) {
   const isAdmin = role === "admin";
   const stockTotal = grupo.items.reduce((acc, p) => acc + p.stock, 0);
+  const costoMin = Math.min(...grupo.items.map((p) => p.costo));
+  const costoMax = Math.max(...grupo.items.map((p) => p.costo));
 
   // Los items ya vienen ordenados por color (y talle dentro de cada color), así que
   // alcanza con cortar en un nuevo renglón cada vez que cambia el color.
@@ -279,6 +281,11 @@ function ModeloGroupSection({
       <div className="modelo-header">
         <h3>{grupo.nombre}</h3>
         <span className={`tag ${grupo.esAccesorio ? "accesorio" : "calzado"}`}>{grupo.tipo}</span>
+        {isAdmin && (
+          <span className="num" style={{ fontSize: 14, fontWeight: 600 }}>
+            {costoMin === costoMax ? fmt(costoMin) : `${fmt(costoMin)} – ${fmt(costoMax)}`}
+          </span>
+        )}
         <span className="hint" style={{ margin: 0 }}>
           {grupo.items[0].marca} · {grupo.items.length} {grupo.items.length === 1 ? "variante" : "variantes"} · {stockTotal} en stock
         </span>
