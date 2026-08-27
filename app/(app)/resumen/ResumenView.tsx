@@ -22,6 +22,7 @@ type ConfigDTO = {
   contado: number;
   talles: string[];
   tallesIndumentaria: string[];
+  tallesJeans: string[];
   tiposCalzado: string[];
   tiposAccesorio: string[];
   vendedores: string[];
@@ -130,6 +131,7 @@ export function ResumenView({
       <div className="card cols-2" style={{ marginBottom: 24 }}>
         <ListaEditable titulo="Talles de calzado" campo="talles" valores={config.talles} />
         <ListaEditable titulo="Talles de indumentaria" campo="tallesIndumentaria" valores={config.tallesIndumentaria} />
+        <ListaEditable titulo="Talles de Jeans" campo="tallesJeans" valores={config.tallesJeans} />
         <ListaEditable titulo="Tipos de calzado" campo="tiposCalzado" valores={config.tiposCalzado} />
         <ListaEditable titulo="Tipos de accesorio" campo="tiposAccesorio" valores={config.tiposAccesorio} />
       </div>
@@ -386,7 +388,7 @@ function ListaEditable({
   valores,
 }: {
   titulo: string;
-  campo: "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio" | "vendedores";
+  campo: "talles" | "tallesIndumentaria" | "tallesJeans" | "tiposCalzado" | "tiposAccesorio" | "vendedores";
   valores: string[];
 }) {
   const [nuevo, setNuevo] = useState("");

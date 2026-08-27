@@ -22,7 +22,7 @@ export async function actualizarCoeficientes(data: {
   revalidateAll();
 }
 
-type ListaCampo = "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio" | "vendedores";
+type ListaCampo = "talles" | "tallesIndumentaria" | "tallesJeans" | "tiposCalzado" | "tiposAccesorio" | "vendedores";
 
 export async function agregarItemLista(campo: ListaCampo, valor: string) {
   await requireRole("admin");

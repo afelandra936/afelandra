@@ -37,9 +37,16 @@ type Props = {
   tiposAccesorio: string[];
   tallesCalzado: string[];
   tallesIndumentaria: string[];
+  tallesJeans: string[];
   proveedoresNombres: string[];
   sinMovimientoIds: string[];
 };
+
+/** Jeans tiene su propia numeración (34, 36, 38...); el resto de indumentaria comparte S/M/L. */
+function ordenTallesPara(tipo: string, tiposAccesorio: string[], props: { tallesCalzado: string[]; tallesIndumentaria: string[]; tallesJeans: string[] }): string[] {
+  if (tipo === "Jeans") return props.tallesJeans;
+  return tiposAccesorio.includes(tipo) ? props.tallesIndumentaria : props.tallesCalzado;
+}
 
 export function StockView(props: Props) {
   const { role, productos } = props;
@@ -86,7 +93,7 @@ export function StockView(props: Props) {
 
     return gruposConFecha.map((grupo) => {
       const esAcc = tiposAccesorioSet.has(grupo.items[0].tipo);
-      const ordenTalles = esAcc ? props.tallesIndumentaria : props.tallesCalzado;
+      const ordenTalles = ordenTallesPara(grupo.items[0].tipo, props.tiposAccesorio, props);
       const talleIndex = (talle: string) => (talle ? ordenTalles.indexOf(talle) : -1);
       const itemsOrdenados = [...grupo.items].sort((a, b) => {
         const colorCmp = a.color.localeCompare(b.color, "es");
@@ -97,7 +104,7 @@ export function StockView(props: Props) {
       });
       return { nombre: grupo.nombre, tipo: grupo.items[0].tipo, esAccesorio: esAcc, items: itemsOrdenados };
     });
-  }, [productosFiltrados, tiposAccesorioSet, props.tallesCalzado, props.tallesIndumentaria]);
+  }, [productosFiltrados, tiposAccesorioSet, props.tiposAccesorio, props.tallesCalzado, props.tallesIndumentaria, props.tallesJeans]);
 
   // IDs de todas las variantes de talle de cada modelo, agrupadas por nombre exacto,
   // calculado sobre TODOS los productos (no solo los filtrados) para que "aplicar a
@@ -429,6 +436,11 @@ function VarianteChip({
         )}
       </div>
       {error && <div style={{ color: "var(--danger)", fontSize: 11 }}>{error}</div>}
+      {producto.observaciones && (
+        <div className="hint" style={{ margin: 0 }} title={producto.observaciones}>
+          {producto.observaciones}
+        </div>
+      )}
       {sinMovimiento && isAdmin && <div className="hint" style={{ margin: 0 }}>Sin movimiento</div>}
     </div>
   );
@@ -604,7 +616,7 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
   const [pending, startTransition] = useTransition();
 
   const esAccesorio = props.tiposAccesorio.includes(tipo);
-  const chips = ["Único", ...(esAccesorio ? props.tallesIndumentaria : props.tallesCalzado)];
+  const chips = ["Único", ...ordenTallesPara(tipo, props.tiposAccesorio, props)];
 
   function toggleChip(talle: string) {
     setSeleccion((prev) => ({

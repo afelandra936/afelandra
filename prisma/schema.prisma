@@ -209,6 +209,7 @@ model Config {
   respuestaVendedorHash String?
   talles             String[] @default(["35","36","37","38","39","40","41"])
   tallesIndumentaria String[] @default(["S","M","L","XL","XXL","XXXL"])
+  tallesJeans        String[] @default(["34","36","38","40","42","44","46","48","50"])
   tiposCalzado       String[] @default(["Zueco","Bota","Borcego","Zapatilla","Sandalia","Botineta","Acordonado","Mocasín","Estileto","Texana"])
   tiposAccesorio     String[] @default(["Cartera","Bandolera","Billetera","Indumentaria","Cintos"])
   vendedores         String[] @default([])

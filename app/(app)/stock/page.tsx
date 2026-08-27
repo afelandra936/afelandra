@@ -25,6 +25,7 @@ export default async function StockPage() {
       tiposAccesorio={config.tiposAccesorio}
       tallesCalzado={config.talles}
       tallesIndumentaria={config.tallesIndumentaria}
+      tallesJeans={config.tallesJeans}
       proveedoresNombres={proveedores.map((p) => p.nombre)}
       sinMovimientoIds={sinMovimiento.map((p) => p.id)}
     />
