@@ -148,7 +148,7 @@ export async function registrarVentaCarrito(
 }
 
 export async function eliminarVenta(id: string) {
-  await requireRole("admin", "empleada");
+  await requireRole("admin");
 
   const venta = await prisma.venta.findUnique({ where: { id } });
   if (!venta) return;

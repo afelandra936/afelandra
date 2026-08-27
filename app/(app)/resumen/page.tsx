@@ -40,7 +40,7 @@ export default async function ResumenPage() {
       efectivoPorSucursal={[...efectivoPorSucursal.entries()].map(([label, value]) => ({ label, value }))}
       config={serialize(config)}
       coeficientesMarca={serialize(coeficientesMarca)}
-      marcasProductos={marcasProductos.map((p) => p.marca)}
+      marcasProductos={[...new Set(marcasProductos.map((p) => p.marca.trim()))].sort((a, b) => a.localeCompare(b, "es"))}
     />
   );
 }

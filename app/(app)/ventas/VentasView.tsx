@@ -95,7 +95,7 @@ export function VentasView(props: Props) {
             </thead>
             <tbody>
               {props.ventas.map((v) => (
-                <VentaRow key={v.id} venta={v} />
+                <VentaRow key={v.id} venta={v} isAdmin={isAdmin} />
               ))}
             </tbody>
           </table>
@@ -129,7 +129,7 @@ export function VentasView(props: Props) {
   );
 }
 
-function VentaRow({ venta }: { venta: VentaDTO }) {
+function VentaRow({ venta, isAdmin }: { venta: VentaDTO; isAdmin: boolean }) {
   const [pending, startTransition] = useTransition();
 
   function handleDelete() {
@@ -150,9 +150,11 @@ function VentaRow({ venta }: { venta: VentaDTO }) {
       <td>{venta.vendedor}</td>
       <td>{venta.clienteNombre ?? "—"}</td>
       <td>
-        <button className="btn danger small" type="button" onClick={handleDelete} disabled={pending}>
-          <IconTrash size={14} />
-        </button>
+        {isAdmin && (
+          <button className="btn danger small" type="button" onClick={handleDelete} disabled={pending}>
+            <IconTrash size={14} />
+          </button>
+        )}
       </td>
     </tr>
   );

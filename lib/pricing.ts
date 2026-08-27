@@ -21,13 +21,18 @@ export type CoeficientesConfig = {
 
 export type CoeficientesPorMarca = Record<string, CoeficientesConfig>;
 
-/** Coeficientes de una marca si tiene configuración propia; si no, los generales. */
+/**
+ * Coeficientes de una marca si tiene configuración propia; si no, los generales.
+ * Compara recortando espacios: las marcas se tipean a mano en Stock durante meses y
+ * es común que la misma marca tenga variantes con espacios de más (ver mismo problema
+ * ya resuelto para nombre de producto y color).
+ */
 export function resolverCoeficientes(
   marca: string,
   general: CoeficientesConfig,
   porMarca: CoeficientesPorMarca
 ): CoeficientesConfig {
-  return porMarca[marca] ?? general;
+  return porMarca[marca.trim()] ?? general;
 }
 
 /** Coeficiente por el que se multiplica el costo según el medio de pago elegido. */
