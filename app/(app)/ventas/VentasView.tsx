@@ -24,6 +24,7 @@ type ProductoDTO = {
   costo: number;
   stock: number;
   codigo: string | null;
+  observaciones: string | null;
 };
 
 type VentaDTO = {
@@ -37,6 +38,7 @@ type VentaDTO = {
   clienteNombre: string | null;
   precioVenta: number;
   promocionNombre: string | null;
+  pagos: { medio: string; monto: number }[];
 };
 
 type PromocionDTO = {
@@ -144,7 +146,15 @@ function VentaRow({ venta, isAdmin }: { venta: VentaDTO; isAdmin: boolean }) {
         {venta.nombre} {venta.talle && <span className="num">({venta.talle})</span>}
       </td>
       <td className="num">{venta.cantidad}</td>
-      <td>{venta.medioPago}</td>
+      <td>
+        {venta.pagos.length > 1 ? (
+          <span className="num" style={{ fontSize: 12.5 }} title={venta.medioPago}>
+            {venta.pagos.map((p) => `${p.medio} ${fmt(p.monto)}`).join(" + ")}
+          </span>
+        ) : (
+          venta.medioPago
+        )}
+      </td>
       <td className="num">{fmt(venta.precioVenta * venta.cantidad)}</td>
       <td>{venta.promocionNombre ?? "—"}</td>
       <td>{venta.vendedor}</td>
@@ -638,6 +648,9 @@ function SelectorModeloColorTalle({
           {item.modelo} · Color: {item.color}
           {item.producto && ` · Talle: ${item.producto.talle || "Único"}`}
         </div>
+      )}
+      {item.producto?.observaciones && (
+        <div className="hint">Obs: {item.producto.observaciones}</div>
       )}
     </div>
   );

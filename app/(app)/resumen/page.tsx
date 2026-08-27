@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getConfig } from "@/lib/config";
 import { toNumber } from "@/lib/format";
 import { serialize } from "@/lib/serialize";
+import { MEDIOS } from "@/lib/pricing";
 import { ResumenView } from "./ResumenView";
 
 export default async function ResumenPage() {
@@ -34,6 +35,16 @@ export default async function ResumenPage() {
     }
   }
 
+  // Cierre de caja de hoy: total por medio de pago, sumando también la parte que le
+  // corresponde a cada medio en las ventas que se pagaron divididas entre varios.
+  const cierreCajaHoy = new Map<string, number>(MEDIOS.map((m) => [m, 0]));
+  for (const v of ventasHoy) {
+    for (const pago of v.pagos) {
+      cierreCajaHoy.set(pago.medio, (cierreCajaHoy.get(pago.medio) ?? 0) + toNumber(pago.monto));
+    }
+  }
+  const cierreCajaTotal = [...cierreCajaHoy.values()].reduce((acc, v) => acc + v, 0);
+
   return (
     <ResumenView
       metrics={{ facturacionHoy, facturacionMes, gananciaEstimadaMes, ticketPromedioMes }}
@@ -41,6 +52,10 @@ export default async function ResumenPage() {
       config={serialize(config)}
       coeficientesMarca={serialize(coeficientesMarca)}
       marcasProductos={[...new Set(marcasProductos.map((p) => p.marca.trim()))].sort((a, b) => a.localeCompare(b, "es"))}
+      cierreCaja={{
+        porMedio: MEDIOS.map((m) => ({ medio: m, monto: cierreCajaHoy.get(m) ?? 0 })),
+        total: cierreCajaTotal,
+      }}
     />
   );
 }

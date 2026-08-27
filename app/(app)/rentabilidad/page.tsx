@@ -1,4 +1,4 @@
-import { getRentabilidad, getComisionesVendedores } from "@/lib/reports";
+import { getRentabilidad, getComisionesVendedores, getVentasPorDia } from "@/lib/reports";
 import { RentabilidadView } from "./RentabilidadView";
 
 const PERIODOS: Record<string, number | null> = { "7": 7, "30": 30, "90": 90, todo: null };
@@ -10,10 +10,11 @@ export default async function RentabilidadPage({
 }) {
   const { periodo } = await searchParams;
   const key = periodo && periodo in PERIODOS ? periodo : "30";
-  const [data, comisiones] = await Promise.all([
+  const [data, comisiones, ventasPorDia] = await Promise.all([
     getRentabilidad(PERIODOS[key]),
     getComisionesVendedores(PERIODOS[key]),
+    getVentasPorDia(PERIODOS[key]),
   ]);
 
-  return <RentabilidadView data={data} comisiones={comisiones} periodoActivo={key} />;
+  return <RentabilidadView data={data} comisiones={comisiones} ventasPorDia={ventasPorDia} periodoActivo={key} />;
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { fmt } from "@/lib/format";
+import { fmt, fmtDate } from "@/lib/format";
+import { MEDIOS } from "@/lib/pricing";
 import { BarChart } from "@/components/charts/BarChart";
 import type { ChartEntry } from "@/lib/reports";
 
@@ -20,14 +21,17 @@ type Data = {
 };
 
 type ComisionVendedor = { vendedor: string; totalComision: number; totalGeneral: number };
+type VentaPorDia = { fecha: string; porMedio: Record<string, number>; total: number };
 
 export function RentabilidadView({
   data,
   comisiones,
+  ventasPorDia,
   periodoActivo,
 }: {
   data: Data;
   comisiones: ComisionVendedor[];
+  ventasPorDia: VentaPorDia[];
   periodoActivo: string;
 }) {
   return (
@@ -102,6 +106,34 @@ export function RentabilidadView({
                   <td>{c.vendedor}</td>
                   <td className="num">{fmt(c.totalComision)}</td>
                   <td className="num">{fmt(c.totalGeneral)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="section-title">Ventas por día</div>
+      <div className="card">
+        {ventasPorDia.length === 0 ? (
+          <p className="empty">No hay ventas en este período.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                {MEDIOS.map((m) => <th key={m}>{m}</th>)}
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ventasPorDia.map((d) => (
+                <tr key={d.fecha}>
+                  <td>{fmtDate(`${d.fecha}T12:00:00`)}</td>
+                  {MEDIOS.map((m) => (
+                    <td key={m} className="num">{d.porMedio[m] ? fmt(d.porMedio[m]) : "—"}</td>
+                  ))}
+                  <td className="num" style={{ fontWeight: 600 }}>{fmt(d.total)}</td>
                 </tr>
               ))}
             </tbody>

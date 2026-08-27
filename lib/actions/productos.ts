@@ -16,6 +16,7 @@ export type ProductoBusqueda = {
   costo: number;
   stock: number;
   codigo: string | null;
+  observaciones: string | null;
 };
 
 function aBusqueda(p: {
@@ -27,6 +28,7 @@ function aBusqueda(p: {
   costo: unknown;
   stock: number;
   codigo: string | null;
+  observaciones: string | null;
 }): ProductoBusqueda {
   return {
     id: p.id,
@@ -37,6 +39,7 @@ function aBusqueda(p: {
     costo: toNumber(p.costo as never),
     stock: p.stock,
     codigo: p.codigo,
+    observaciones: p.observaciones,
   };
 }
 

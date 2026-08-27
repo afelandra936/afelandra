@@ -107,3 +107,32 @@ export async function getComisionesVendedores(dias: number | null): Promise<Comi
 
   return [...porVendedor.values()].sort((a, b) => b.totalComision - a.totalComision);
 }
+
+export type VentaPorDia = { fecha: string; porMedio: Record<string, number>; total: number };
+
+/** Total vendido por día, desglosado por medio de pago (incluye la parte de cada medio en ventas divididas). */
+export async function getVentasPorDia(dias: number | null): Promise<VentaPorDia[]> {
+  const where = dias ? { fecha: { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) } } : {};
+  const ventas = await prisma.venta.findMany({
+    where,
+    select: { fecha: true, pagos: { select: { medio: true, monto: true } } },
+  });
+
+  const porDia = new Map<string, Record<string, number>>();
+  for (const v of ventas) {
+    const key = v.fecha.toISOString().slice(0, 10);
+    const entry = porDia.get(key) ?? {};
+    for (const pago of v.pagos) {
+      entry[pago.medio] = (entry[pago.medio] ?? 0) + toNumber(pago.monto);
+    }
+    porDia.set(key, entry);
+  }
+
+  return [...porDia.entries()]
+    .map(([fecha, porMedio]) => ({
+      fecha,
+      porMedio,
+      total: Object.values(porMedio).reduce((acc, v) => acc + v, 0),
+    }))
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+}

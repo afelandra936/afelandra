@@ -36,18 +36,25 @@ type CoeficienteMarcaDTO = {
   contado: number;
 };
 
+type CierreCajaDTO = {
+  porMedio: { medio: string; monto: number }[];
+  total: number;
+};
+
 export function ResumenView({
   metrics,
   efectivoPorSucursal,
   config,
   coeficientesMarca,
   marcasProductos,
+  cierreCaja,
 }: {
   metrics: { facturacionHoy: number; facturacionMes: number; gananciaEstimadaMes: number; ticketPromedioMes: number };
   efectivoPorSucursal: { label: string; value: number }[];
   config: ConfigDTO;
   coeficientesMarca: CoeficienteMarcaDTO[];
   marcasProductos: string[];
+  cierreCaja: CierreCajaDTO;
 }) {
   return (
     <div className="view active">
@@ -75,6 +82,26 @@ export function ResumenView({
           <div className="label">Ticket promedio (mes)</div>
           <div className="value">{fmt(metrics.ticketPromedioMes)}</div>
         </div>
+      </div>
+
+      <div className="section-title" style={{ marginTop: 0 }}>Cierre de caja de hoy</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <table>
+          <thead>
+            <tr>
+              {cierreCaja.porMedio.map((m) => <th key={m.medio}>{m.medio}</th>)}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {cierreCaja.porMedio.map((m) => (
+                <td key={m.medio} className="num" style={{ fontSize: 16 }}>{fmt(m.monto)}</td>
+              ))}
+              <td className="num" style={{ fontSize: 16, fontWeight: 700 }}>{fmt(cierreCaja.total)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div className="section-title">Efectivo de hoy por sucursal</div>
