@@ -7,7 +7,7 @@ import { getConfig } from "@/lib/config";
 import { revalidatePath } from "next/cache";
 
 function revalidateAll() {
-  for (const path of ["/resumen", "/ventas", "/stock"]) revalidatePath(path);
+  for (const path of ["/resumen", "/ventas", "/stock", "/vouchers"]) revalidatePath(path);
 }
 
 export async function actualizarCoeficientes(data: {
@@ -22,7 +22,7 @@ export async function actualizarCoeficientes(data: {
   revalidateAll();
 }
 
-type ListaCampo = "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio";
+type ListaCampo = "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio" | "vendedores";
 
 export async function agregarItemLista(campo: ListaCampo, valor: string) {
   await requireRole("admin");

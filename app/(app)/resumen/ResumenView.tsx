@@ -24,6 +24,7 @@ type ConfigDTO = {
   tallesIndumentaria: string[];
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  vendedores: string[];
   preguntaAdmin: string | null;
   preguntaVendedor: string | null;
 };
@@ -39,6 +40,7 @@ type CoeficienteMarcaDTO = {
 type CierreCajaDTO = {
   porMedio: { medio: string; monto: number }[];
   total: number;
+  voucherRedimidoHoy: number;
 };
 
 export function ResumenView({
@@ -102,6 +104,11 @@ export function ResumenView({
             </tr>
           </tbody>
         </table>
+        {cierreCaja.voucherRedimidoHoy > 0 && (
+          <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+            Pagado con vouchers hoy: {fmt(cierreCaja.voucherRedimidoHoy)} (no está en el total de arriba — esa plata ya se contó el día que se vendió cada voucher).
+          </p>
+        )}
       </div>
 
       <div className="section-title">Efectivo de hoy por sucursal</div>
@@ -125,6 +132,11 @@ export function ResumenView({
         <ListaEditable titulo="Talles de indumentaria" campo="tallesIndumentaria" valores={config.tallesIndumentaria} />
         <ListaEditable titulo="Tipos de calzado" campo="tiposCalzado" valores={config.tiposCalzado} />
         <ListaEditable titulo="Tipos de accesorio" campo="tiposAccesorio" valores={config.tiposAccesorio} />
+      </div>
+
+      <div className="section-title">Vendedores</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <ListaEditable titulo="Vendedores" campo="vendedores" valores={config.vendedores} />
       </div>
 
       <div className="section-title">Seguridad</div>
@@ -374,7 +386,7 @@ function ListaEditable({
   valores,
 }: {
   titulo: string;
-  campo: "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio";
+  campo: "talles" | "tallesIndumentaria" | "tiposCalzado" | "tiposAccesorio" | "vendedores";
   valores: string[];
 }) {
   const [nuevo, setNuevo] = useState("");

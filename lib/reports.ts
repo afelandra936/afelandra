@@ -110,21 +110,35 @@ export async function getComisionesVendedores(dias: number | null): Promise<Comi
 
 export type VentaPorDia = { fecha: string; porMedio: Record<string, number>; total: number };
 
-/** Total vendido por día, desglosado por medio de pago (incluye la parte de cada medio en ventas divididas). */
+/**
+ * Total vendido por día, desglosado por medio de pago (incluye la parte de cada medio
+ * en ventas divididas). Los pagos con voucher no cuentan acá (esa plata ya entró el día
+ * que se vendió el voucher); en cambio, la venta de un voucher sí, por su propio medio.
+ */
 export async function getVentasPorDia(dias: number | null): Promise<VentaPorDia[]> {
   const where = dias ? { fecha: { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) } } : {};
-  const ventas = await prisma.venta.findMany({
-    where,
-    select: { fecha: true, pagos: { select: { medio: true, monto: true } } },
-  });
+  const [ventas, vouchers] = await Promise.all([
+    prisma.venta.findMany({
+      where,
+      select: { fecha: true, pagos: { select: { medio: true, monto: true } } },
+    }),
+    prisma.voucher.findMany({ where, select: { fecha: true, medioPago: true, montoInicial: true } }),
+  ]);
 
   const porDia = new Map<string, Record<string, number>>();
   for (const v of ventas) {
     const key = v.fecha.toISOString().slice(0, 10);
     const entry = porDia.get(key) ?? {};
     for (const pago of v.pagos) {
+      if (pago.medio === "Voucher") continue;
       entry[pago.medio] = (entry[pago.medio] ?? 0) + toNumber(pago.monto);
     }
+    porDia.set(key, entry);
+  }
+  for (const v of vouchers) {
+    const key = v.fecha.toISOString().slice(0, 10);
+    const entry = porDia.get(key) ?? {};
+    entry[v.medioPago] = (entry[v.medioPago] ?? 0) + toNumber(v.montoInicial);
     porDia.set(key, entry);
   }
 

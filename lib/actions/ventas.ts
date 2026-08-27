@@ -8,12 +8,12 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "@/app/generated/prisma/client";
 
 function revalidateAfterVenta() {
-  for (const path of ["/ventas", "/stock", "/resumen", "/rentabilidad", "/clientes"]) {
+  for (const path of ["/ventas", "/stock", "/resumen", "/rentabilidad", "/clientes", "/vouchers"]) {
     revalidatePath(path);
   }
 }
 
-export type PagoInput = { medio: string; monto: number };
+export type PagoInput = { medio: string; monto: number; voucherId?: string };
 
 export type ItemCarrito = {
   productoId: string;
@@ -61,6 +61,7 @@ export async function registrarVentaCarrito(
     data: Prisma.VentaCreateInput;
     productoId: string;
     stockRestante: number;
+    pagos: PagoInput[];
   }[] = [];
   const perdidas: string[] = [];
 
@@ -93,7 +94,7 @@ export async function registrarVentaCarrito(
       item.pagos && item.pagos.length > 0
         ? item.pagos
         : [{ medio: item.medioPago, monto: precioUnitario(costoUnitario, item.medioPago, coefProducto) * item.cantidad }];
-    const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor }));
+    const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor, voucherId: p.voucherId }));
     const precioTotal = pagos.reduce((acc, p) => acc + p.monto, 0);
     const precioVentaUnitario = precioTotal / item.cantidad;
 
@@ -110,6 +111,7 @@ export async function registrarVentaCarrito(
     preparados.push({
       productoId: producto.id,
       stockRestante: Math.max(0, producto.stock - item.cantidad),
+      pagos,
       data: {
         fecha: new Date(`${input.fecha}T12:00:00`),
         producto: { connect: { id: producto.id } },
@@ -128,7 +130,7 @@ export async function registrarVentaCarrito(
         costoUnitario,
         promocion: promocion ? { connect: { id: promocion.id } } : undefined,
         promocionNombre: promocion?.nombre ?? null,
-        pagos: { create: pagos.map((p) => ({ medio: p.medio, monto: p.monto })) },
+        pagos: { create: pagos.map((p) => ({ medio: p.medio, monto: p.monto, voucherId: p.voucherId })) },
       },
     });
   }
@@ -139,19 +141,55 @@ export async function registrarVentaCarrito(
     };
   }
 
+  // Si algún pago usa un voucher, validar que le quede saldo suficiente (sumando todo lo
+  // que este carrito le pide, por si el mismo voucher cubre más de un ítem) y descontarlo.
+  const usoPorVoucher = new Map<string, number>();
+  for (const p of preparados) {
+    for (const pago of p.pagos) {
+      if (!pago.voucherId) continue;
+      usoPorVoucher.set(pago.voucherId, (usoPorVoucher.get(pago.voucherId) ?? 0) + pago.monto);
+    }
+  }
+  const voucherUpdates: Prisma.PrismaPromise<unknown>[] = [];
+  for (const [voucherId, monto] of usoPorVoucher) {
+    const voucher = await prisma.voucher.findUnique({ where: { id: voucherId } });
+    if (!voucher) return { error: "El voucher usado ya no existe" };
+    if (monto > Number(voucher.saldo) + 0.01) {
+      return { error: `El voucher "${voucher.codigo}" no tiene saldo suficiente: quedan ${fmtNum(voucher.saldo)}` };
+    }
+    voucherUpdates.push(
+      prisma.voucher.update({ where: { id: voucherId }, data: { saldo: { decrement: monto } } })
+    );
+  }
+
   await prisma.$transaction([
     ...preparados.map((p) => prisma.venta.create({ data: p.data })),
     ...preparados.map((p) => prisma.producto.update({ where: { id: p.productoId }, data: { stock: p.stockRestante } })),
+    ...voucherUpdates,
   ]);
 
   revalidateAfterVenta();
 }
 
+function fmtNum(value: unknown): string {
+  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(Number(value));
+}
+
 export async function eliminarVenta(id: string) {
   await requireRole("admin");
 
-  const venta = await prisma.venta.findUnique({ where: { id } });
+  const venta = await prisma.venta.findUnique({ where: { id }, include: { pagos: true } });
   if (!venta) return;
+
+  // Si algún pago de esta venta usó un voucher, devolverle ese saldo al borrar la venta.
+  const usoPorVoucher = new Map<string, number>();
+  for (const pago of venta.pagos) {
+    if (!pago.voucherId) continue;
+    usoPorVoucher.set(pago.voucherId, (usoPorVoucher.get(pago.voucherId) ?? 0) + Number(pago.monto));
+  }
+  const voucherRefunds = [...usoPorVoucher.entries()].map(([voucherId, monto]) =>
+    prisma.voucher.update({ where: { id: voucherId }, data: { saldo: { increment: monto } } })
+  );
 
   await prisma.$transaction([
     prisma.producto.update({
@@ -159,6 +197,7 @@ export async function eliminarVenta(id: string) {
       data: { stock: { increment: venta.cantidad } },
     }),
     prisma.venta.delete({ where: { id } }),
+    ...voucherRefunds,
   ]);
 
   revalidateAfterVenta();

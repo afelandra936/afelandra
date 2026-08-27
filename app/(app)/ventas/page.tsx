@@ -32,6 +32,7 @@ export default async function VentasPage() {
       role={session!.role}
       ventas={serialize(ventas)}
       clientesNombres={clientes.map((c) => c.nombre)}
+      vendedoresNombres={config.vendedores}
       config={serialize(config)}
       coeficientesPorMarca={serialize(coeficientesPorMarca)}
       charts={charts}

@@ -5,6 +5,7 @@ import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
+import { buscarVoucherPorCodigo } from "@/lib/actions/vouchers";
 import {
   buscarProductoPorCodigo,
   buscarModelos,
@@ -55,6 +56,7 @@ type Props = {
   role: Role;
   ventas: VentaDTO[];
   clientesNombres: string[];
+  vendedoresNombres: string[];
   config: ConfigDTO;
   coeficientesPorMarca: CoeficientesPorMarcaDTO;
   charts: { topProductos: ChartEntry[]; topProveedores: ChartEntry[]; medios: ChartEntry[]; vendedores: ChartEntry[] } | null;
@@ -256,6 +258,38 @@ function calcularDivisionCarrito(
   return { porItem, total, montoResto };
 }
 
+type PorItem = { id: string; pagos: { medio: string; monto: number; voucherId?: string }[]; total: number };
+
+/**
+ * Descuenta un voucher del total ya calculado (sin tocar ratioMedio/coeficientes:
+ * el voucher es plata que ya entró el día que se vendió, no un medio con margen
+ * propio). Reparte el monto proporcionalmente al total de cada ítem, y dentro de
+ * cada ítem escala sus pagos existentes para que sigan sumando lo que falta.
+ */
+function aplicarVoucherAPorItem(porItem: PorItem[], montoVoucher: number, voucherId: string): PorItem[] {
+  const totalCarrito = porItem.reduce((acc, it) => acc + it.total, 0);
+  if (montoVoucher <= 0 || totalCarrito <= 0) return porItem;
+
+  return porItem.map((it) => {
+    if (it.total <= 0) return it;
+    const share = it.total / totalCarrito;
+    const montoVoucherItem = montoVoucher * share; // en $ finales (ya con promo aplicada)
+    const escala = (it.total - montoVoucherItem) / it.total;
+    const pagosEscalados = it.pagos.map((p) => ({ medio: p.medio, monto: p.monto * escala }));
+    // it.pagos está SIN el factor de promoción (el servidor lo multiplica al recibirlo,
+    // igual que hace con el resto de los pagos) — así que el monto del voucher hay que
+    // pasarlo a esos mismos términos "sin promoción" para que, multiplicado por ese mismo
+    // factor allá, dé el monto final correcto.
+    const pagosSum = it.pagos.reduce((acc, p) => acc + p.monto, 0);
+    const factorItem = pagosSum > 0 ? it.total / pagosSum : 1;
+    return {
+      id: it.id,
+      total: it.total,
+      pagos: [...pagosEscalados, { medio: "Voucher", monto: montoVoucherItem / factorItem, voucherId }],
+    };
+  });
+}
+
 function NuevaVentaForm(props: Props) {
   const { config, coeficientesPorMarca } = props;
 
@@ -272,14 +306,74 @@ function NuevaVentaForm(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const [usarVoucher, setUsarVoucher] = useState(false);
+  const [voucherCodigoInput, setVoucherCodigoInput] = useState("");
+  const [voucherInfo, setVoucherInfo] = useState<{ id: string; codigo: string; saldo: number } | null>(null);
+  const [montoVoucherInput, setMontoVoucherInput] = useState("");
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [buscandoVoucher, startVoucherTransition] = useTransition();
+
   const itemsValidos = items.filter((it): it is ItemConProducto => it.producto !== null);
   const divisionCarrito = dividido
     ? calcularDivisionCarrito(itemsValidos, pagosParciales, medioResto, config, coeficientesPorMarca, props.promociones)
     : null;
-  const total = divisionCarrito
-    ? divisionCarrito.total
-    : items.reduce((acc, item) => acc + totalItem(item, config, coeficientesPorMarca, props.promociones), 0);
+
+  // Base sin voucher: o la división por varios medios, o cada ítem con su propio medio
+  // (sintetizado en la misma forma para poder aplicarle el mismo descuento de voucher).
+  // Igual que calcularDivisionCarrito: pagos SIN el factor de promoción (el servidor lo
+  // multiplica al recibirlos) y total CON el factor ya aplicado.
+  const porItemBase: PorItem[] =
+    divisionCarrito?.porItem ??
+    itemsValidos.map((it) => {
+      const cantidad = Number(it.cantidad) || 0;
+      const promocion = props.promociones.find((p) => p.id === it.promocionId) ?? null;
+      const factor = factorPromocion(promocion, cantidad);
+      const coef = resolverCoeficientes(it.producto.marca, config, coeficientesPorMarca);
+      const montoSinFactor = precioUnitario(it.producto.costo, it.medioPago, coef) * cantidad;
+      return { id: it.id, total: montoSinFactor * factor, pagos: [{ medio: it.medioPago, monto: montoSinFactor }] };
+    });
+  const totalSinVoucher = divisionCarrito ? divisionCarrito.total : porItemBase.reduce((acc, it) => acc + it.total, 0);
+  const montoVoucherClamped =
+    usarVoucher && voucherInfo
+      ? Math.max(0, Math.min(Number(montoVoucherInput) || 0, voucherInfo.saldo, totalSinVoucher))
+      : 0;
+  const porItemFinal: PorItem[] =
+    montoVoucherClamped > 0 && voucherInfo
+      ? aplicarVoucherAPorItem(porItemBase, montoVoucherClamped, voucherInfo.id)
+      : porItemBase;
+
+  const total = totalSinVoucher;
   const montoResto = divisionCarrito?.montoResto ?? 0;
+  const montoACobrar = total - montoVoucherClamped;
+
+  function buscarVoucher() {
+    const codigo = voucherCodigoInput.trim();
+    if (!codigo) return;
+    setVoucherError(null);
+    startVoucherTransition(async () => {
+      const v = await buscarVoucherPorCodigo(codigo);
+      if (!v) {
+        setVoucherInfo(null);
+        setVoucherError("No se encontró un voucher con ese código");
+        return;
+      }
+      if (v.saldo <= 0) {
+        setVoucherInfo(null);
+        setVoucherError(`El voucher ${v.codigo} ya no tiene saldo`);
+        return;
+      }
+      setVoucherInfo({ id: v.id, codigo: v.codigo, saldo: v.saldo });
+      setMontoVoucherInput(String(Math.min(v.saldo, total)));
+    });
+  }
+
+  function quitarVoucher() {
+    setUsarVoucher(false);
+    setVoucherCodigoInput("");
+    setVoucherInfo(null);
+    setMontoVoucherInput("");
+    setVoucherError(null);
+  }
 
   function addPagoParcial() {
     setPagosParciales((prev) => [...prev, { medio: MEDIOS[0], monto: "" }]);
@@ -335,10 +429,14 @@ function NuevaVentaForm(props: Props) {
       setError("Cantidad inválida en algún producto");
       return;
     }
+    if (usarVoucher && !voucherInfo) {
+      setError("Buscá un voucher válido o desmarcá 'Usar un voucher'");
+      return;
+    }
 
     const carritoItems: ItemCarrito[] = itemsValidos.map((it) => {
       const cantidadNum = Number(it.cantidad) || 0;
-      const pagos = divisionCarrito?.porItem.find((p) => p.id === it.id)?.pagos;
+      const pagos = porItemFinal.find((p) => p.id === it.id)?.pagos;
       return {
         productoId: it.producto.id,
         cantidad: cantidadNum,
@@ -374,6 +472,7 @@ function NuevaVentaForm(props: Props) {
       setObservaciones("");
       setDividido(false);
       setPagosParciales([]);
+      quitarVoucher();
     });
   }
 
@@ -400,7 +499,10 @@ function NuevaVentaForm(props: Props) {
       </div>
       <div className="field">
         <label htmlFor="v-vendedor">Vendedor</label>
-        <input id="v-vendedor" value={vendedor} onChange={(e) => setVendedor(e.target.value)} required />
+        <input id="v-vendedor" value={vendedor} onChange={(e) => setVendedor(e.target.value)} list="vendedores-list" required />
+        <datalist id="vendedores-list">
+          {props.vendedoresNombres.map((n) => <option key={n} value={n} />)}
+        </datalist>
       </div>
       <div className="field">
         <label htmlFor="v-cliente">Cliente</label>
@@ -459,6 +561,23 @@ function NuevaVentaForm(props: Props) {
         </div>
       </div>
 
+      {montoVoucherClamped > 0 && (
+        <>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>Voucher aplicado</label>
+            <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18, color: "var(--leaf)" }} className="num">
+              -{fmt(montoVoucherClamped)}
+            </div>
+          </div>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>A cobrar</label>
+            <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18, fontWeight: 700 }} className="num">
+              {fmt(montoACobrar)}
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="checkbox-row" style={{ flexBasis: "100%" }}>
         <input
           type="checkbox"
@@ -506,6 +625,56 @@ function NuevaVentaForm(props: Props) {
             </select>
             <span className="num">{fmt(montoResto)}</span>
           </div>
+        </div>
+      )}
+
+      <div className="checkbox-row" style={{ flexBasis: "100%" }}>
+        <input
+          type="checkbox"
+          id="v-usar-voucher"
+          checked={usarVoucher}
+          onChange={(e) => {
+            setUsarVoucher(e.target.checked);
+            if (!e.target.checked) quitarVoucher();
+          }}
+        />
+        <label htmlFor="v-usar-voucher">Usar un voucher</label>
+      </div>
+
+      {usarVoucher && (
+        <div style={{ flexBasis: "100%" }}>
+          {!voucherInfo ? (
+            <div className="pago-row">
+              <input
+                placeholder="Código de voucher"
+                value={voucherCodigoInput}
+                onChange={(e) => setVoucherCodigoInput(e.target.value)}
+                style={{ width: 160 }}
+              />
+              <button type="button" className="btn ghost small" onClick={buscarVoucher} disabled={buscandoVoucher}>
+                Buscar
+              </button>
+              {voucherError && <span style={{ color: "var(--danger)", fontSize: 13 }}>{voucherError}</span>}
+            </div>
+          ) : (
+            <div className="pago-row">
+              <span className="hint">
+                Voucher <strong className="num">{voucherInfo.codigo}</strong> — saldo disponible: {fmt(voucherInfo.saldo)}
+              </span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max={Math.min(voucherInfo.saldo, total)}
+                value={montoVoucherInput}
+                onChange={(e) => setMontoVoucherInput(e.target.value)}
+                style={{ width: 120 }}
+              />
+              <button type="button" className="btn ghost small" onClick={quitarVoucher}>
+                Quitar voucher
+              </button>
+            </div>
+          )}
         </div>
       )}
 
