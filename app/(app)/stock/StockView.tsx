@@ -39,6 +39,7 @@ type Props = {
   tallesIndumentaria: string[];
   tallesJeans: string[];
   proveedoresNombres: string[];
+  marcasProductos: string[];
   sinMovimientoIds: string[];
 };
 
@@ -242,6 +243,7 @@ export function StockView(props: Props) {
               onDuplicate={abrirDuplicado}
               tiposCalzado={props.tiposCalzado}
               tiposAccesorio={props.tiposAccesorio}
+              marcasProductos={props.marcasProductos}
               idsMismoModelo={idsPorNombre.get(grupo.nombre) ?? []}
               sinMovimientoSet={sinMovimientoSet}
             />
@@ -258,6 +260,7 @@ function ModeloGroupSection({
   onDuplicate,
   tiposCalzado,
   tiposAccesorio,
+  marcasProductos,
   idsMismoModelo,
   sinMovimientoSet,
 }: {
@@ -266,6 +269,7 @@ function ModeloGroupSection({
   onDuplicate: (producto: ProductoDTO) => void;
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  marcasProductos: string[];
   idsMismoModelo: string[];
   sinMovimientoSet: Set<string>;
 }) {
@@ -315,6 +319,7 @@ function ModeloGroupSection({
                 onDuplicate={onDuplicate}
                 tiposCalzado={tiposCalzado}
                 tiposAccesorio={tiposAccesorio}
+                marcasProductos={marcasProductos}
                 idsMismoModelo={idsMismoModelo}
                 sinMovimiento={producto.stock > 0 && sinMovimientoSet.has(producto.id)}
               />
@@ -333,6 +338,7 @@ function VarianteChip({
   onDuplicate,
   tiposCalzado,
   tiposAccesorio,
+  marcasProductos,
   idsMismoModelo,
 }: {
   producto: ProductoDTO;
@@ -341,6 +347,7 @@ function VarianteChip({
   onDuplicate: (producto: ProductoDTO) => void;
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  marcasProductos: string[];
   idsMismoModelo: string[];
 }) {
   const isAdmin = role === "admin";
@@ -384,6 +391,7 @@ function VarianteChip({
         producto={producto}
         tiposCalzado={tiposCalzado}
         tiposAccesorio={tiposAccesorio}
+        marcasProductos={marcasProductos}
         idsMismoModelo={idsMismoModelo}
         onDuplicate={onDuplicate}
         onDone={() => setEditing(false)}
@@ -450,6 +458,7 @@ function EditProductoRow({
   producto,
   tiposCalzado,
   tiposAccesorio,
+  marcasProductos,
   idsMismoModelo,
   onDuplicate,
   onDone,
@@ -458,6 +467,7 @@ function EditProductoRow({
   producto: ProductoDTO;
   tiposCalzado: string[];
   tiposAccesorio: string[];
+  marcasProductos: string[];
   idsMismoModelo: string[];
   onDuplicate: (producto: ProductoDTO) => void;
   onDone: () => void;
@@ -537,7 +547,16 @@ function EditProductoRow({
           </div>
           <div className="field">
             <label htmlFor={`ep-marca-${producto.id}`}>Marca</label>
-            <input id={`ep-marca-${producto.id}`} value={marca} onChange={(e) => setMarca(e.target.value)} style={{ width: 90 }} />
+            <input
+              id={`ep-marca-${producto.id}`}
+              value={marca}
+              onChange={(e) => setMarca(e.target.value)}
+              list="marcas-list-edit"
+              style={{ width: 90 }}
+            />
+            <datalist id="marcas-list-edit">
+              {marcasProductos.map((n) => <option key={n} value={n} />)}
+            </datalist>
           </div>
           <div className="field">
             <label htmlFor={`ep-color-${producto.id}`}>Color</label>
@@ -717,6 +736,9 @@ function NuevoProductoForm(props: Props & { seed: ProductoDTO | null; onDone: ()
       <div className="field">
         <label htmlFor="p-marca">Marca</label>
         <input id="p-marca" placeholder="Grimoldi" value={marca} onChange={(e) => setMarca(e.target.value)} list="marcas-list" />
+        <datalist id="marcas-list">
+          {props.marcasProductos.map((n) => <option key={n} value={n} />)}
+        </datalist>
       </div>
       <div className="field">
         <label htmlFor="p-proveedor">Proveedor</label>

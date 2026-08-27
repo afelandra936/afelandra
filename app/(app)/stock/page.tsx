@@ -17,6 +17,10 @@ export default async function StockPage() {
     prisma.proveedor.findMany({ select: { nombre: true }, orderBy: { nombre: "asc" } }),
   ]);
 
+  const marcasProductos = [...new Set(productos.map((p) => p.marca.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "es")
+  );
+
   return (
     <StockView
       role={session!.role}
@@ -27,6 +31,7 @@ export default async function StockPage() {
       tallesIndumentaria={config.tallesIndumentaria}
       tallesJeans={config.tallesJeans}
       proveedoresNombres={proveedores.map((p) => p.nombre)}
+      marcasProductos={marcasProductos}
       sinMovimientoIds={sinMovimiento.map((p) => p.id)}
     />
   );
