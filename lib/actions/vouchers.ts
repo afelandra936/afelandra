@@ -111,3 +111,16 @@ export async function listarVouchers(): Promise<VoucherDTO[]> {
   const vouchers = await prisma.voucher.findMany({ orderBy: { fecha: "desc" } });
   return vouchers.map(aDTO);
 }
+
+/** Solo se puede borrar un voucher que nunca se usó como pago en ninguna venta. */
+export async function eliminarVoucher(id: string): Promise<{ error: string } | void> {
+  await requireRole("admin");
+
+  const usado = await prisma.pagoVenta.findFirst({ where: { voucherId: id } });
+  if (usado) {
+    return { error: "No se puede eliminar: este voucher ya se usó como pago en una venta" };
+  }
+
+  await prisma.voucher.delete({ where: { id } });
+  revalidateAfterVoucher();
+}

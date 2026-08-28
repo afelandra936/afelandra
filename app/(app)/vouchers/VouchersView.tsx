@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS } from "@/lib/pricing";
-import { crearVoucher } from "@/lib/actions/vouchers";
+import { crearVoucher, eliminarVoucher } from "@/lib/actions/vouchers";
 import type { Role } from "@/lib/auth";
 
 type VoucherDTO = {
@@ -27,6 +28,8 @@ export function VouchersView({
   vouchers: VoucherDTO[];
   vendedoresNombres: string[];
 }) {
+  const isAdmin = role === "admin";
+
   return (
     <div className="view active">
       <header className="view-head">
@@ -55,34 +58,61 @@ export function VouchersView({
                 <th>Saldo</th>
                 <th>Estado</th>
                 <th>Fecha</th>
+                {isAdmin && <th></th>}
               </tr>
             </thead>
             <tbody>
               {vouchers.map((v) => (
-                <tr key={v.id}>
-                  <td className="num">{v.codigo}</td>
-                  <td>{v.clienteNombre ?? "—"}</td>
-                  <td>{v.vendedor}</td>
-                  <td>{v.medioPago}</td>
-                  <td className="num">{fmt(v.montoInicial)}</td>
-                  <td className="num">{fmt(v.saldo)}</td>
-                  <td>
-                    {v.saldo <= 0 ? (
-                      <span className="out-stock">Agotado</span>
-                    ) : v.saldo < v.montoInicial ? (
-                      <span className="hint">Parcial</span>
-                    ) : (
-                      <span className="tag calzado">Activo</span>
-                    )}
-                  </td>
-                  <td>{fmtDate(v.fecha)}</td>
-                </tr>
+                <VoucherRow key={v.id} voucher={v} isAdmin={isAdmin} />
               ))}
             </tbody>
           </table>
         )}
       </div>
     </div>
+  );
+}
+
+function VoucherRow({ voucher, isAdmin }: { voucher: VoucherDTO; isAdmin: boolean }) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleDelete() {
+    if (!confirm(`¿Eliminar el voucher ${voucher.codigo}?`)) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await eliminarVoucher(voucher.id);
+      if (res?.error) setError(res.error);
+    });
+  }
+
+  return (
+    <tr>
+      <td className="num">{voucher.codigo}</td>
+      <td>{voucher.clienteNombre ?? "—"}</td>
+      <td>{voucher.vendedor}</td>
+      <td>{voucher.medioPago}</td>
+      <td className="num">{fmt(voucher.montoInicial)}</td>
+      <td className="num">{fmt(voucher.saldo)}</td>
+      <td>
+        {voucher.saldo <= 0 ? (
+          <span className="out-stock">Agotado</span>
+        ) : voucher.saldo < voucher.montoInicial ? (
+          <span className="hint">Parcial</span>
+        ) : (
+          <span className="tag calzado">Activo</span>
+        )}
+      </td>
+      <td>{fmtDate(voucher.fecha)}</td>
+      {isAdmin && (
+        <td>
+          <button className="btn danger small" type="button" onClick={handleDelete} disabled={pending}>
+            <IconTrash size={14} />
+          </button>
+          {error && <div style={{ color: "var(--danger)", fontSize: 11, marginTop: 4 }}>{error}</div>}
+        </td>
+      )}
+    </tr>
   );
 }
 

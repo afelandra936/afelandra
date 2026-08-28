@@ -30,6 +30,8 @@ model Producto {
   updatedAt  DateTime @updatedAt
 
   ventas     Venta[]
+  cambiosDevueltos Cambio[] @relation("CambioDevuelto")
+  cambiosNuevos    Cambio[] @relation("CambioNuevo")
 
   @@index([proveedorId])
   @@index([nombre])
@@ -63,6 +65,7 @@ model Venta {
   createdAt     DateTime @default(now())
 
   pagos         PagoVenta[]
+  cambio        Cambio?
 
   @@index([productoId])
   @@index([clienteId])
@@ -87,16 +90,19 @@ model Promocion {
 }
 
 model PagoVenta {
-  id        String   @id @default(cuid())
-  ventaId   String
-  venta     Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
-  medio     String
-  monto     Decimal  @db.Decimal(12, 2)
-  voucherId String?
-  voucher   Voucher? @relation(fields: [voucherId], references: [id])
+  id            String       @id @default(cuid())
+  ventaId       String
+  venta         Venta        @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  medio         String
+  monto         Decimal      @db.Decimal(12, 2)
+  voucherId     String?
+  voucher       Voucher?     @relation(fields: [voucherId], references: [id])
+  notaCreditoId String?
+  notaCredito   NotaCredito? @relation(fields: [notaCreditoId], references: [id])
 
   @@index([ventaId])
   @@index([voucherId])
+  @@index([notaCreditoId])
 }
 
 // ---------- Vouchers (ingreso sin producto asociado, redimible después) ----------
@@ -116,6 +122,61 @@ model Voucher {
   pagos         PagoVenta[]
 
   @@index([codigo])
+  @@index([fecha])
+}
+
+// ---------- Cambios (devolución + producto nuevo) y Notas de Crédito ----------
+
+model Cambio {
+  id                 String   @id @default(cuid())
+  fecha              DateTime @default(now())
+  clienteId          String
+  cliente            Cliente  @relation(fields: [clienteId], references: [id])
+
+  productoDevueltoId String
+  productoDevuelto   Producto @relation("CambioDevuelto", fields: [productoDevueltoId], references: [id])
+  nombreDevuelto     String
+  talleDevuelto      String
+  precioDevuelto     Decimal  @db.Decimal(12, 2)
+
+  productoNuevoId    String
+  productoNuevo      Producto @relation("CambioNuevo", fields: [productoNuevoId], references: [id])
+  nombreNuevo        String
+  talleNuevo         String
+  precioNuevo        Decimal  @db.Decimal(12, 2)
+
+  diferencia         Decimal  @db.Decimal(12, 2) // precioNuevo - precioDevuelto
+  medioPago          String   // medio usado para tasar ambos productos del cambio
+
+  ventaId            String?      @unique
+  venta              Venta?       @relation(fields: [ventaId], references: [id])
+  notaCreditoId      String?      @unique
+  notaCredito        NotaCredito? @relation(fields: [notaCreditoId], references: [id])
+
+  vendedor           String
+  observaciones      String?
+  createdAt          DateTime @default(now())
+
+  @@index([clienteId])
+  @@index([fecha])
+}
+
+model NotaCredito {
+  id            String   @id @default(cuid())
+  clienteId     String
+  cliente       Cliente  @relation(fields: [clienteId], references: [id])
+  montoInicial  Decimal  @db.Decimal(12, 2)
+  saldo         Decimal  @db.Decimal(12, 2)
+  medioPago     String   // medio de referencia (del cambio que la generó) para tasar su redención por costo
+  vendedor      String
+  observaciones String?
+  fecha         DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  cambio        Cambio?
+  pagos         PagoVenta[]
+
+  @@index([clienteId])
   @@index([fecha])
 }
 
@@ -191,6 +252,8 @@ model Cliente {
   updatedAt DateTime  @updatedAt
 
   ventas    Venta[]
+  cambios      Cambio[]
+  notasCredito NotaCredito[]
 }
 
 // ---------- Configuración global (fila única) ----------

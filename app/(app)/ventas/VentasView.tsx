@@ -6,6 +6,7 @@ import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
 import { buscarVoucherPorCodigo } from "@/lib/actions/vouchers";
+import { buscarNotaCreditoPorCliente } from "@/lib/actions/cambios";
 import {
   buscarProductoPorCodigo,
   buscarModelos,
@@ -212,22 +213,45 @@ function totalItem(
 
 type ItemConProducto = CartItem & { producto: ProductoDTO };
 
+type PorItem = {
+  id: string;
+  pagos: { medio: string; monto: number; voucherId?: string; notaCreditoId?: string }[];
+  total: number;
+};
+
+/** Un crédito (voucher o nota de crédito) aplicado como un medio de pago más dentro del
+ * "resto automático": refMedio es el medio con el que se tasa su costo cubierto (para un
+ * voucher, el medio con el que se compró — así $100.000 de un voucher comprado en
+ * Efectivo cubre exactamente lo mismo que $100.000 pagados hoy en Efectivo), mientras que
+ * medio/campo/refId son solo para cómo queda guardado el pago (etiqueta + referencia). */
+type CreditoAplicado = {
+  monto: number;
+  refMedio: string;
+  medio: string;
+  campo: "voucherId" | "notaCreditoId";
+  refId: string;
+};
+
 /**
  * Igual que el "resto automático" de una venta simple, pero usando el costo de
  * TODOS los productos del carrito como base — así seguir cobrando en 3 cuotas o en
  * efectivo sigue "valiendo" lo mismo en términos de costo cubierto, sin importar
- * cuántos productos distintos haya. Después, cada producto se lleva su parte
- * proporcional a su costo, y recién ahí se le aplica su propia promoción (si tiene).
+ * cuántos productos distintos haya. Los créditos (voucher/nota de crédito) entran a
+ * este mismo cálculo como un pago más — se convierten a costo cubierto con SU PROPIO
+ * medio de referencia (no con el medio del resto), exactamente igual que cualquier
+ * otro medio ingresado a mano. Después, cada producto se lleva su parte proporcional
+ * a su costo, y recién ahí se le aplica su propia promoción (si tiene).
  */
 function calcularDivisionCarrito(
   itemsValidos: ItemConProducto[],
   pagosParciales: { medio: string; monto: string }[],
+  creditos: CreditoAplicado[],
   medioResto: string,
   config: ConfigDTO,
   coeficientesPorMarca: CoeficientesPorMarcaDTO,
   promociones: PromocionDTO[]
 ): {
-  porItem: { id: string; pagos: { medio: string; monto: number }[]; total: number }[];
+  porItem: PorItem[];
   total: number;
   montoResto: number;
 } {
@@ -239,8 +263,23 @@ function calcularDivisionCarrito(
   const marcasEnCarrito = new Set(itemsValidos.map((it) => it.producto.marca));
   const marcaUnica = marcasEnCarrito.size === 1 ? [...marcasEnCarrito][0] : null;
   const coefResto = marcaUnica ? resolverCoeficientes(marcaUnica, config, coeficientesPorMarca) : config;
-  const montoResto = calcularMontoResto(costoTotalCarrito, pagosNum, medioResto, coefResto);
-  const pagosGlobal = [...pagosNum, { medio: medioResto, monto: montoResto }];
+
+  // Para el cálculo de costo cubierto, cada crédito entra con SU propio medio de
+  // referencia (no con "Voucher"/"Nota de crédito", que no tienen coeficiente propio).
+  const pagosParaCosto = [
+    ...pagosNum,
+    ...creditos.map((c) => ({ medio: c.refMedio, monto: c.monto })),
+  ];
+  const montoResto = calcularMontoResto(costoTotalCarrito, pagosParaCosto, medioResto, coefResto);
+
+  // Para guardar, en cambio, cada crédito usa su propia etiqueta (Voucher/Nota de
+  // crédito) y su id de referencia — así el pago queda identificado correctamente y
+  // Cierre de caja lo puede excluir (esa plata ya se contó en otro momento).
+  const pagosGlobal: { medio: string; monto: number; voucherId?: string; notaCreditoId?: string }[] = [
+    ...pagosNum,
+    ...creditos.map((c) => ({ medio: c.medio, monto: c.monto, [c.campo]: c.refId })),
+    { medio: medioResto, monto: montoResto },
+  ];
 
   let total = 0;
   const porItem = itemsValidos.map((it) => {
@@ -249,45 +288,13 @@ function calcularDivisionCarrito(
     const share = costoTotalCarrito > 0 ? costoItem / costoTotalCarrito : 0;
     const promocion = promociones.find((p) => p.id === it.promocionId) ?? null;
     const factor = factorPromocion(promocion, cantidad);
-    const pagos = pagosGlobal.map((p) => ({ medio: p.medio, monto: p.monto * share }));
+    const pagos = pagosGlobal.map((p) => ({ ...p, monto: p.monto * share }));
     const totalItemConFactor = pagos.reduce((acc, p) => acc + p.monto, 0) * factor;
     total += totalItemConFactor;
     return { id: it.id, pagos, total: totalItemConFactor };
   });
 
   return { porItem, total, montoResto };
-}
-
-type PorItem = { id: string; pagos: { medio: string; monto: number; voucherId?: string }[]; total: number };
-
-/**
- * Descuenta un voucher del total ya calculado (sin tocar ratioMedio/coeficientes:
- * el voucher es plata que ya entró el día que se vendió, no un medio con margen
- * propio). Reparte el monto proporcionalmente al total de cada ítem, y dentro de
- * cada ítem escala sus pagos existentes para que sigan sumando lo que falta.
- */
-function aplicarVoucherAPorItem(porItem: PorItem[], montoVoucher: number, voucherId: string): PorItem[] {
-  const totalCarrito = porItem.reduce((acc, it) => acc + it.total, 0);
-  if (montoVoucher <= 0 || totalCarrito <= 0) return porItem;
-
-  return porItem.map((it) => {
-    if (it.total <= 0) return it;
-    const share = it.total / totalCarrito;
-    const montoVoucherItem = montoVoucher * share; // en $ finales (ya con promo aplicada)
-    const escala = (it.total - montoVoucherItem) / it.total;
-    const pagosEscalados = it.pagos.map((p) => ({ medio: p.medio, monto: p.monto * escala }));
-    // it.pagos está SIN el factor de promoción (el servidor lo multiplica al recibirlo,
-    // igual que hace con el resto de los pagos) — así que el monto del voucher hay que
-    // pasarlo a esos mismos términos "sin promoción" para que, multiplicado por ese mismo
-    // factor allá, dé el monto final correcto.
-    const pagosSum = it.pagos.reduce((acc, p) => acc + p.monto, 0);
-    const factorItem = pagosSum > 0 ? it.total / pagosSum : 1;
-    return {
-      id: it.id,
-      total: it.total,
-      pagos: [...pagosEscalados, { medio: "Voucher", monto: montoVoucherItem / factorItem, voucherId }],
-    };
-  });
 }
 
 function NuevaVentaForm(props: Props) {
@@ -308,21 +315,40 @@ function NuevaVentaForm(props: Props) {
 
   const [usarVoucher, setUsarVoucher] = useState(false);
   const [voucherCodigoInput, setVoucherCodigoInput] = useState("");
-  const [voucherInfo, setVoucherInfo] = useState<{ id: string; codigo: string; saldo: number } | null>(null);
+  const [voucherInfo, setVoucherInfo] = useState<{ id: string; codigo: string; saldo: number; medioPago: string } | null>(null);
   const [montoVoucherInput, setMontoVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
   const [buscandoVoucher, startVoucherTransition] = useTransition();
 
+  const [notaCreditoDetectada, setNotaCreditoDetectada] = useState<{ id: string; saldo: number; clienteNombre: string; medioPago: string } | null>(null);
+  const [usarNotaCredito, setUsarNotaCredito] = useState(false);
+  const [montoNotaCreditoInput, setMontoNotaCreditoInput] = useState("");
+
   const itemsValidos = items.filter((it): it is ItemConProducto => it.producto !== null);
-  const divisionCarrito = dividido
-    ? calcularDivisionCarrito(itemsValidos, pagosParciales, medioResto, config, coeficientesPorMarca, props.promociones)
+
+  // Cada crédito entra al cálculo de costo con su PROPIO medio de referencia (con qué
+  // se compró el voucher / con qué se tasó el cambio que generó la nota), exactamente
+  // como si el cajero lo hubiera tipeado a mano en "Dividir el pago".
+  const creditosActivos: CreditoAplicado[] = [];
+  if (usarVoucher && voucherInfo) {
+    const monto = Math.max(0, Math.min(Number(montoVoucherInput) || 0, voucherInfo.saldo));
+    if (monto > 0) {
+      creditosActivos.push({ monto, refMedio: voucherInfo.medioPago, medio: "Voucher", campo: "voucherId", refId: voucherInfo.id });
+    }
+  }
+  if (usarNotaCredito && notaCreditoDetectada) {
+    const monto = Math.max(0, Math.min(Number(montoNotaCreditoInput) || 0, notaCreditoDetectada.saldo));
+    if (monto > 0) {
+      creditosActivos.push({ monto, refMedio: notaCreditoDetectada.medioPago, medio: "Nota de crédito", campo: "notaCreditoId", refId: notaCreditoDetectada.id });
+    }
+  }
+
+  const hayDivisionOCredito = dividido || creditosActivos.length > 0;
+  const divisionCarrito = hayDivisionOCredito
+    ? calcularDivisionCarrito(itemsValidos, pagosParciales, creditosActivos, medioResto, config, coeficientesPorMarca, props.promociones)
     : null;
 
-  // Base sin voucher: o la división por varios medios, o cada ítem con su propio medio
-  // (sintetizado en la misma forma para poder aplicarle el mismo descuento de voucher).
-  // Igual que calcularDivisionCarrito: pagos SIN el factor de promoción (el servidor lo
-  // multiplica al recibirlos) y total CON el factor ya aplicado.
-  const porItemBase: PorItem[] =
+  const porItemFinal: PorItem[] =
     divisionCarrito?.porItem ??
     itemsValidos.map((it) => {
       const cantidad = Number(it.cantidad) || 0;
@@ -332,19 +358,29 @@ function NuevaVentaForm(props: Props) {
       const montoSinFactor = precioUnitario(it.producto.costo, it.medioPago, coef) * cantidad;
       return { id: it.id, total: montoSinFactor * factor, pagos: [{ medio: it.medioPago, monto: montoSinFactor }] };
     });
-  const totalSinVoucher = divisionCarrito ? divisionCarrito.total : porItemBase.reduce((acc, it) => acc + it.total, 0);
-  const montoVoucherClamped =
-    usarVoucher && voucherInfo
-      ? Math.max(0, Math.min(Number(montoVoucherInput) || 0, voucherInfo.saldo, totalSinVoucher))
-      : 0;
-  const porItemFinal: PorItem[] =
-    montoVoucherClamped > 0 && voucherInfo
-      ? aplicarVoucherAPorItem(porItemBase, montoVoucherClamped, voucherInfo.id)
-      : porItemBase;
 
-  const total = totalSinVoucher;
+  const total = divisionCarrito ? divisionCarrito.total : porItemFinal.reduce((acc, it) => acc + it.total, 0);
   const montoResto = divisionCarrito?.montoResto ?? 0;
-  const montoACobrar = total - montoVoucherClamped;
+
+  useEffect(() => {
+    const nombre = clienteNombre.trim();
+    if (!nombre) {
+      setNotaCreditoDetectada(null);
+      setUsarNotaCredito(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const nota = await buscarNotaCreditoPorCliente(nombre);
+      if (nota && nota.clienteNombre.toLowerCase() === nombre.toLowerCase()) {
+        setNotaCreditoDetectada({ id: nota.id, saldo: nota.saldo, clienteNombre: nota.clienteNombre, medioPago: nota.medioPago });
+      } else {
+        setNotaCreditoDetectada(null);
+        setUsarNotaCredito(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteNombre]);
 
   function buscarVoucher() {
     const codigo = voucherCodigoInput.trim();
@@ -362,8 +398,9 @@ function NuevaVentaForm(props: Props) {
         setVoucherError(`El voucher ${v.codigo} ya no tiene saldo`);
         return;
       }
-      setVoucherInfo({ id: v.id, codigo: v.codigo, saldo: v.saldo });
-      setMontoVoucherInput(String(Math.min(v.saldo, total)));
+      setVoucherInfo({ id: v.id, codigo: v.codigo, saldo: v.saldo, medioPago: v.medioPago });
+      setMontoVoucherInput(String(v.saldo));
+      setDividido(true);
     });
   }
 
@@ -373,6 +410,18 @@ function NuevaVentaForm(props: Props) {
     setVoucherInfo(null);
     setMontoVoucherInput("");
     setVoucherError(null);
+  }
+
+  function aplicarNotaCredito() {
+    if (!notaCreditoDetectada) return;
+    setUsarNotaCredito(true);
+    setMontoNotaCreditoInput(String(notaCreditoDetectada.saldo));
+    setDividido(true);
+  }
+
+  function quitarNotaCredito() {
+    setUsarNotaCredito(false);
+    setMontoNotaCreditoInput("");
   }
 
   function addPagoParcial() {
@@ -433,6 +482,10 @@ function NuevaVentaForm(props: Props) {
       setError("Buscá un voucher válido o desmarcá 'Usar un voucher'");
       return;
     }
+    if (usarNotaCredito && !notaCreditoDetectada) {
+      setError("No hay una nota de crédito para aplicar");
+      return;
+    }
 
     const carritoItems: ItemCarrito[] = itemsValidos.map((it) => {
       const cantidadNum = Number(it.cantidad) || 0;
@@ -473,6 +526,7 @@ function NuevaVentaForm(props: Props) {
       setDividido(false);
       setPagosParciales([]);
       quitarVoucher();
+      quitarNotaCredito();
     });
   }
 
@@ -561,21 +615,13 @@ function NuevaVentaForm(props: Props) {
         </div>
       </div>
 
-      {montoVoucherClamped > 0 && (
-        <>
-          <div className="field" style={{ marginTop: 16 }}>
-            <label>Voucher aplicado</label>
-            <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18, color: "var(--leaf)" }} className="num">
-              -{fmt(montoVoucherClamped)}
-            </div>
+      {creditosActivos.length > 0 && (
+        <div className="field" style={{ marginTop: 16 }}>
+          <label>Créditos aplicados</label>
+          <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18, color: "var(--leaf)" }} className="num">
+            -{fmt(creditosActivos.reduce((acc, c) => acc + c.monto, 0))}
           </div>
-          <div className="field" style={{ marginTop: 16 }}>
-            <label>A cobrar</label>
-            <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18, fontWeight: 700 }} className="num">
-              {fmt(montoACobrar)}
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
       <div className="checkbox-row" style={{ flexBasis: "100%" }}>
@@ -591,7 +637,7 @@ function NuevaVentaForm(props: Props) {
         <label htmlFor="v-dividir">Dividir el pago entre varios medios</label>
       </div>
 
-      {dividido && (
+      {hayDivisionOCredito && (
         <div style={{ flexBasis: "100%" }}>
           {pagosParciales.map((p, idx) => (
             <div className="pago-row" key={idx}>
@@ -665,7 +711,7 @@ function NuevaVentaForm(props: Props) {
                 type="number"
                 step="0.01"
                 min="0"
-                max={Math.min(voucherInfo.saldo, total)}
+                max={voucherInfo.saldo}
                 value={montoVoucherInput}
                 onChange={(e) => setMontoVoucherInput(e.target.value)}
                 style={{ width: 120 }}
@@ -675,6 +721,37 @@ function NuevaVentaForm(props: Props) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {notaCreditoDetectada && !usarNotaCredito && (
+        <div className="pago-row" style={{ flexBasis: "100%" }}>
+          <span className="hint">
+            {notaCreditoDetectada.clienteNombre} tiene una nota de crédito de {fmt(notaCreditoDetectada.saldo)}.
+          </span>
+          <button type="button" className="btn ghost small" onClick={aplicarNotaCredito}>
+            Aplicar
+          </button>
+        </div>
+      )}
+
+      {usarNotaCredito && notaCreditoDetectada && (
+        <div className="pago-row" style={{ flexBasis: "100%" }}>
+          <span className="hint">
+            Nota de crédito de {notaCreditoDetectada.clienteNombre} — saldo disponible: {fmt(notaCreditoDetectada.saldo)}
+          </span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max={notaCreditoDetectada.saldo}
+            value={montoNotaCreditoInput}
+            onChange={(e) => setMontoNotaCreditoInput(e.target.value)}
+            style={{ width: 120 }}
+          />
+          <button type="button" className="btn ghost small" onClick={quitarNotaCredito}>
+            Quitar nota de crédito
+          </button>
         </div>
       )}
 

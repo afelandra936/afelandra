@@ -13,7 +13,7 @@ function revalidateAfterVenta() {
   }
 }
 
-export type PagoInput = { medio: string; monto: number; voucherId?: string };
+export type PagoInput = { medio: string; monto: number; voucherId?: string; notaCreditoId?: string };
 
 export type ItemCarrito = {
   productoId: string;
@@ -94,7 +94,12 @@ export async function registrarVentaCarrito(
       item.pagos && item.pagos.length > 0
         ? item.pagos
         : [{ medio: item.medioPago, monto: precioUnitario(costoUnitario, item.medioPago, coefProducto) * item.cantidad }];
-    const pagos = pagosBase.map((p) => ({ medio: p.medio, monto: p.monto * factor, voucherId: p.voucherId }));
+    const pagos = pagosBase.map((p) => ({
+      medio: p.medio,
+      monto: p.monto * factor,
+      voucherId: p.voucherId,
+      notaCreditoId: p.notaCreditoId,
+    }));
     const precioTotal = pagos.reduce((acc, p) => acc + p.monto, 0);
     const precioVentaUnitario = precioTotal / item.cantidad;
 
@@ -130,7 +135,14 @@ export async function registrarVentaCarrito(
         costoUnitario,
         promocion: promocion ? { connect: { id: promocion.id } } : undefined,
         promocionNombre: promocion?.nombre ?? null,
-        pagos: { create: pagos.map((p) => ({ medio: p.medio, monto: p.monto, voucherId: p.voucherId })) },
+        pagos: {
+          create: pagos.map((p) => ({
+            medio: p.medio,
+            monto: p.monto,
+            voucherId: p.voucherId,
+            notaCreditoId: p.notaCreditoId,
+          })),
+        },
       },
     });
   }
@@ -162,10 +174,31 @@ export async function registrarVentaCarrito(
     );
   }
 
+  // Mismo control para notas de crédito.
+  const usoPorNotaCredito = new Map<string, number>();
+  for (const p of preparados) {
+    for (const pago of p.pagos) {
+      if (!pago.notaCreditoId) continue;
+      usoPorNotaCredito.set(pago.notaCreditoId, (usoPorNotaCredito.get(pago.notaCreditoId) ?? 0) + pago.monto);
+    }
+  }
+  const notaCreditoUpdates: Prisma.PrismaPromise<unknown>[] = [];
+  for (const [notaCreditoId, monto] of usoPorNotaCredito) {
+    const nota = await prisma.notaCredito.findUnique({ where: { id: notaCreditoId } });
+    if (!nota) return { error: "La nota de crédito usada ya no existe" };
+    if (monto > Number(nota.saldo) + 0.01) {
+      return { error: `La nota de crédito no tiene saldo suficiente: quedan ${fmtNum(nota.saldo)}` };
+    }
+    notaCreditoUpdates.push(
+      prisma.notaCredito.update({ where: { id: notaCreditoId }, data: { saldo: { decrement: monto } } })
+    );
+  }
+
   await prisma.$transaction([
     ...preparados.map((p) => prisma.venta.create({ data: p.data })),
     ...preparados.map((p) => prisma.producto.update({ where: { id: p.productoId }, data: { stock: p.stockRestante } })),
     ...voucherUpdates,
+    ...notaCreditoUpdates,
   ]);
 
   revalidateAfterVenta();
@@ -181,6 +214,11 @@ export async function eliminarVenta(id: string) {
   const venta = await prisma.venta.findUnique({ where: { id }, include: { pagos: true } });
   if (!venta) return;
 
+  const cambioAsociado = await prisma.cambio.findUnique({ where: { ventaId: id } });
+  if (cambioAsociado) {
+    throw new Error("No se puede eliminar: esta venta es la diferencia de un cambio registrado");
+  }
+
   // Si algún pago de esta venta usó un voucher, devolverle ese saldo al borrar la venta.
   const usoPorVoucher = new Map<string, number>();
   for (const pago of venta.pagos) {
@@ -191,6 +229,16 @@ export async function eliminarVenta(id: string) {
     prisma.voucher.update({ where: { id: voucherId }, data: { saldo: { increment: monto } } })
   );
 
+  // Igual con notas de crédito.
+  const usoPorNotaCredito = new Map<string, number>();
+  for (const pago of venta.pagos) {
+    if (!pago.notaCreditoId) continue;
+    usoPorNotaCredito.set(pago.notaCreditoId, (usoPorNotaCredito.get(pago.notaCreditoId) ?? 0) + Number(pago.monto));
+  }
+  const notaCreditoRefunds = [...usoPorNotaCredito.entries()].map(([notaCreditoId, monto]) =>
+    prisma.notaCredito.update({ where: { id: notaCreditoId }, data: { saldo: { increment: monto } } })
+  );
+
   await prisma.$transaction([
     prisma.producto.update({
       where: { id: venta.productoId },
@@ -198,6 +246,7 @@ export async function eliminarVenta(id: string) {
     }),
     prisma.venta.delete({ where: { id } }),
     ...voucherRefunds,
+    ...notaCreditoRefunds,
   ]);
 
   revalidateAfterVenta();
