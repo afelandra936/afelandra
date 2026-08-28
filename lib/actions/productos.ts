@@ -121,6 +121,59 @@ export async function buscarVariantesPorModeloColor(nombre: string, color: strin
   return filtrados.map(aBusqueda).sort((a, b) => compararTalle(a.talle, b.talle));
 }
 
+// ---------- Búsqueda para Remitos: igual que la de Ventas, pero sin filtrar por stock>0
+// (acá el caso típico es justamente reponer un modelo agotado). ----------
+
+/** Paso 1 de Remitos: nombres de modelo que coinciden con la búsqueda, sin importar el stock. */
+export async function buscarModelosParaRemito(query: string): Promise<string[]> {
+  await requireRole("admin");
+  const q = query.trim();
+  if (!q) return [];
+
+  const productos = await prisma.producto.findMany({
+    where: { nombre: { contains: q, mode: "insensitive" } },
+    select: { nombre: true },
+    distinct: ["nombre"],
+    orderBy: { nombre: "asc" },
+    take: 15,
+  });
+  return productos.map((p) => p.nombre);
+}
+
+/** Paso 2 de Remitos: colores existentes de un modelo, con su stock actual (puede ser 0). */
+export async function buscarColoresParaRemito(nombre: string): Promise<{ color: string; stock: number }[]> {
+  await requireRole("admin");
+  const productos = await prisma.producto.findMany({
+    where: { nombre },
+    select: { color: true, stock: true },
+  });
+
+  const mapa = new Map<string, number>();
+  for (const p of productos) {
+    const key = p.color.trim();
+    mapa.set(key, (mapa.get(key) ?? 0) + p.stock);
+  }
+  return [...mapa.entries()]
+    .map(([color, stock]) => ({ color, stock }))
+    .sort((a, b) => a.color.localeCompare(b.color, "es"));
+}
+
+/** Paso 3 de Remitos: variantes de talle existentes de un modelo+color (puede ser lista vacía si el talle es nuevo). */
+export async function buscarVariantesParaRemito(nombre: string, color: string): Promise<ProductoBusqueda[]> {
+  await requireRole("admin");
+  const colorTrim = color.trim();
+  const productos = await prisma.producto.findMany({ where: { nombre } });
+  const filtrados = productos.filter((p) => p.color.trim() === colorTrim);
+  return filtrados.map(aBusqueda).sort((a, b) => compararTalle(a.talle, b.talle));
+}
+
+/** Tipo y marca de un modelo ya existente, para pre-completar un talle nuevo de ese mismo modelo. */
+export async function obtenerInfoModelo(nombre: string): Promise<{ tipo: string; marca: string } | null> {
+  await requireRole("admin");
+  const producto = await prisma.producto.findFirst({ where: { nombre }, select: { tipo: true, marca: true } });
+  return producto ?? null;
+}
+
 export async function crearProducto(data: {
   nombre: string;
   tipo: string;

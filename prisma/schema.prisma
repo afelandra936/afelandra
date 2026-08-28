@@ -32,6 +32,7 @@ model Producto {
   ventas     Venta[]
   cambiosDevueltos Cambio[] @relation("CambioDevuelto")
   cambiosNuevos    Cambio[] @relation("CambioNuevo")
+  remitoItems      RemitoItem[]
 
   @@index([proveedorId])
   @@index([nombre])
@@ -222,7 +223,28 @@ model Remito {
   tieneIva     Boolean   @default(true)
   createdAt    DateTime  @default(now())
 
+  items        RemitoItem[]
+
   @@index([proveedorId])
+}
+
+/** Detalle de artículos de un remito puntual: qué producto, talle, cantidad y costo llegó. */
+model RemitoItem {
+  id            String    @id @default(cuid())
+  remitoId      String
+  remito        Remito    @relation(fields: [remitoId], references: [id], onDelete: Cascade)
+  productoId    String?
+  producto      Producto? @relation(fields: [productoId], references: [id], onDelete: SetNull)
+  // snapshot histórico: no cambia si luego se edita/borra el producto
+  nombre        String
+  color         String
+  talle         String
+  cantidad      Int
+  costoUnitario Decimal   @db.Decimal(12, 2)
+  createdAt     DateTime  @default(now())
+
+  @@index([remitoId])
+  @@index([productoId])
 }
 
 model PagoProveedor {

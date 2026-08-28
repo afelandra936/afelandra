@@ -1,16 +1,25 @@
 import { prisma } from "@/lib/prisma";
 import { calcularDeuda, montoConIva } from "@/lib/suppliers";
 import { serialize } from "@/lib/serialize";
+import { getConfig } from "@/lib/config";
 import { ProveedoresView } from "./ProveedoresView";
 
 export default async function ProveedoresPage() {
-  const proveedores = await prisma.proveedor.findMany({
-    include: {
-      remitos: { orderBy: { fecha: "desc" } },
-      pagos: { orderBy: { fecha: "desc" } },
-    },
-    orderBy: { nombre: "asc" },
-  });
+  const [proveedores, config, productos] = await Promise.all([
+    prisma.proveedor.findMany({
+      include: {
+        remitos: { include: { items: true }, orderBy: { fecha: "desc" } },
+        pagos: { orderBy: { fecha: "desc" } },
+      },
+      orderBy: { nombre: "asc" },
+    }),
+    getConfig(),
+    prisma.producto.findMany({ select: { marca: true } }),
+  ]);
+
+  const marcasProductos = [...new Set(productos.map((p) => p.marca.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "es")
+  );
 
   const conTotales = proveedores.map((p) => ({
     ...p,
@@ -30,6 +39,9 @@ export default async function ProveedoresPage() {
       proveedores={serialize(conTotales)}
       chartFacturado={chartFacturado}
       chartDeuda={chartDeuda}
+      tiposCalzado={config.tiposCalzado}
+      tiposAccesorio={config.tiposAccesorio}
+      marcasProductos={marcasProductos}
     />
   );
 }
