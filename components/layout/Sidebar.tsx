@@ -14,6 +14,7 @@ import {
   IconCalculator,
   IconTicket,
   IconArrowsExchange,
+  IconTag,
   IconLogout,
 } from "@tabler/icons-react";
 import { BrandMark } from "@/components/BrandMark";
@@ -23,6 +24,7 @@ import type { Role } from "@/lib/auth";
 const NAV_ITEMS = [
   { href: "/resumen", label: "Resumen", icon: IconLayoutDashboard, adminOnly: true },
   { href: "/ventas", label: "Ventas", icon: IconShoppingBag, adminOnly: false },
+  { href: "/precios", label: "Precios", icon: IconTag, adminOnly: false },
   { href: "/vouchers", label: "Vouchers", icon: IconTicket, adminOnly: false },
   { href: "/cambios", label: "Cambios", icon: IconArrowsExchange, adminOnly: false },
   { href: "/presupuestos", label: "Presupuestos", icon: IconCalculator, adminOnly: false },

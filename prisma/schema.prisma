@@ -164,6 +164,7 @@ model Cambio {
 
 model NotaCredito {
   id            String   @id @default(cuid())
+  codigo        String   @unique // para identificarla al usarla o reimprimir el comprobante
   clienteId     String
   cliente       Cliente  @relation(fields: [clienteId], references: [id])
   montoInicial  Decimal  @db.Decimal(12, 2)
@@ -179,6 +180,7 @@ model NotaCredito {
 
   @@index([clienteId])
   @@index([fecha])
+  @@index([codigo])
 }
 
 // ---------- Gastos ----------

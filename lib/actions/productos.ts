@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { toNumber } from "@/lib/format";
+import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
+import { MEDIOS, precioUnitario, resolverCoeficientes } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
 
 type TalleInput = { talle: string; stock: number; codigo?: string };
@@ -71,6 +73,62 @@ export async function buscarProductoPorCodigo(codigo: string): Promise<ProductoB
 
   const producto = await prisma.producto.findUnique({ where: { codigo: c } });
   return producto ? aBusqueda(producto) : null;
+}
+
+export type PrecioBusqueda = {
+  id: string;
+  nombre: string;
+  color: string;
+  talle: string;
+  marca: string;
+  stock: number;
+  codigo: string | null;
+  observaciones: string | null;
+  precios: { medio: string; precio: number }[];
+};
+
+/**
+ * Búsqueda para la pestaña Precios: por nombre, color, código de barras u observaciones,
+ * sin filtrar por stock (así también sirve para avisar "no hay talle"). Devuelve el precio
+ * ya calculado en todos los medios de pago — nunca el costo, esta pantalla es para
+ * Vendedor también y el costo tiene que seguir siendo solo de admin.
+ */
+export async function buscarVariantesPrecios(query: string): Promise<PrecioBusqueda[]> {
+  await requireRole("admin", "empleada");
+  const q = query.trim();
+  if (!q) return [];
+
+  const [productos, config, coeficientesPorMarca] = await Promise.all([
+    prisma.producto.findMany({
+      where: {
+        OR: [
+          { nombre: { contains: q, mode: "insensitive" } },
+          { color: { contains: q, mode: "insensitive" } },
+          { codigo: { contains: q, mode: "insensitive" } },
+          { observaciones: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      orderBy: { nombre: "asc" },
+      take: 30,
+    }),
+    getConfig(),
+    getCoeficientesPorMarca(),
+  ]);
+
+  return productos.map((p) => {
+    const coef = resolverCoeficientes(p.marca, config, coeficientesPorMarca);
+    return {
+      id: p.id,
+      nombre: p.nombre,
+      color: p.color,
+      talle: p.talle,
+      marca: p.marca,
+      stock: p.stock,
+      codigo: p.codigo,
+      observaciones: p.observaciones,
+      precios: MEDIOS.map((medio) => ({ medio, precio: precioUnitario(p.costo, medio, coef) })),
+    };
+  });
 }
 
 /** Paso 1 de Ventas: nombres de modelo que coinciden con la búsqueda, con stock disponible. */
@@ -290,7 +348,7 @@ export async function eliminarProducto(id: string) {
   try {
     await prisma.producto.delete({ where: { id } });
   } catch {
-    throw new Error("No se puede eliminar: el producto tiene ventas asociadas");
+    throw new Error("No se puede eliminar: el producto tiene ventas o cambios asociados");
   }
   revalidatePath("/stock");
 }

@@ -3,7 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, resolverCoeficientes } from "@/lib/pricing";
-import { registrarCambio } from "@/lib/actions/cambios";
+import { registrarCambio, eliminarCambio } from "@/lib/actions/cambios";
+import { IconTrash } from "@tabler/icons-react";
 import { buscarClientes, type ClienteBusqueda } from "@/lib/actions/clientes";
 import {
   buscarModelos,
@@ -31,6 +32,7 @@ type CambioDTO = {
 
 type NotaCreditoDTO = {
   id: string;
+  codigo: string;
   clienteId: string;
   clienteNombre: string;
   montoInicial: number;
@@ -40,6 +42,48 @@ type NotaCreditoDTO = {
 
 type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
 type CoeficientesPorMarcaDTO = Record<string, ConfigDTO>;
+
+/** Abre una ventana angosta con el comprobante de la nota de crédito, lista para imprimir
+ * (o "Guardar como PDF" desde el diálogo de impresión del navegador). */
+function imprimirNotaCredito(nota: { codigo: string; clienteNombre: string; monto: number; fecha: string }) {
+  const ventana = window.open("", "_blank", "width=380,height=600");
+  if (!ventana) return;
+  const fechaTexto = fmtDate(nota.fecha);
+  const montoTexto = fmt(nota.monto);
+  ventana.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Nota de crédito ${nota.codigo}</title>
+<style>
+  body { font-family: 'Work Sans', Arial, sans-serif; padding: 24px; color: #111; }
+  .marca { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; text-align: center; color: #555; margin-bottom: 4px; }
+  h1 { font-size: 18px; text-align: center; margin: 0 0 20px; }
+  .codigo { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; text-align: center; letter-spacing: 3px; border: 1px dashed #999; padding: 10px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  td { padding: 6px 0; font-size: 14px; }
+  td.label { color: #666; }
+  td.valor { text-align: right; font-weight: 600; }
+  .monto { text-align: center; font-size: 26px; font-weight: 700; margin: 16px 0; }
+  .nota { font-size: 12px; color: #666; text-align: center; margin-top: 24px; border-top: 1px solid #ddd; padding-top: 12px; }
+</style>
+</head>
+<body>
+  <div class="marca">Afelandra Calzados</div>
+  <h1>Nota de crédito</h1>
+  <div class="codigo">${nota.codigo}</div>
+  <table>
+    <tr><td class="label">Cliente</td><td class="valor">${nota.clienteNombre}</td></tr>
+    <tr><td class="label">Fecha</td><td class="valor">${fechaTexto}</td></tr>
+  </table>
+  <div class="monto">${montoTexto}</div>
+  <div class="nota">Válida como medio de pago, total o parcial, en una compra futura.<br/>Conservar este comprobante — se necesita el código para usarla.</div>
+</body>
+</html>`);
+  ventana.document.close();
+  ventana.focus();
+  setTimeout(() => ventana.print(), 200);
+}
 
 export function CambiosView({
   role,
@@ -86,27 +130,12 @@ export function CambiosView({
                 <th>Diferencia</th>
                 <th>Resultado</th>
                 <th>Vendedor</th>
+                {isAdmin && <th></th>}
               </tr>
             </thead>
             <tbody>
               {cambios.map((c) => (
-                <tr key={c.id}>
-                  <td>{fmtDate(c.fecha)}</td>
-                  <td>{c.clienteNombre}</td>
-                  <td>{c.nombreDevuelto} ({c.talleDevuelto || "Único"}) — {fmt(c.precioDevuelto)}</td>
-                  <td>{c.nombreNuevo} ({c.talleNuevo || "Único"}) — {fmt(c.precioNuevo)}</td>
-                  <td className="num">{fmt(c.diferencia)}</td>
-                  <td>
-                    {c.tipo === "venta" ? (
-                      <span className="tag calzado">Cobrado</span>
-                    ) : c.tipo === "nota_credito" ? (
-                      <span className="hint">Nota de crédito</span>
-                    ) : (
-                      <span className="hint">Sin diferencia</span>
-                    )}
-                  </td>
-                  <td>{c.vendedor}</td>
-                </tr>
+                <CambioRow key={c.id} cambio={c} isAdmin={isAdmin} />
               ))}
             </tbody>
           </table>
@@ -123,16 +152,19 @@ export function CambiosView({
               <table>
                 <thead>
                   <tr>
+                    <th>Código</th>
                     <th>Cliente</th>
                     <th>Monto inicial</th>
                     <th>Saldo</th>
                     <th>Estado</th>
                     <th>Fecha</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {notasCredito.map((n) => (
                     <tr key={n.id}>
+                      <td style={{ fontFamily: "var(--font-mono, monospace)" }}>{n.codigo}</td>
                       <td>{n.clienteNombre}</td>
                       <td className="num">{fmt(n.montoInicial)}</td>
                       <td className="num">{fmt(n.saldo)}</td>
@@ -146,6 +178,15 @@ export function CambiosView({
                         )}
                       </td>
                       <td>{fmtDate(n.fecha)}</td>
+                      <td>
+                        <button
+                          className="btn ghost small"
+                          type="button"
+                          onClick={() => imprimirNotaCredito({ codigo: n.codigo, clienteNombre: n.clienteNombre, monto: n.montoInicial, fecha: n.fecha })}
+                        >
+                          Comprobante
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -155,6 +196,48 @@ export function CambiosView({
         </>
       )}
     </div>
+  );
+}
+
+function CambioRow({ cambio: c, isAdmin }: { cambio: CambioDTO; isAdmin: boolean }) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleDelete() {
+    if (!confirm(`¿Eliminar este cambio de ${c.clienteNombre}? Se revierte el stock y, si generó una venta o nota de crédito, también se borra.`)) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await eliminarCambio(c.id);
+      if (res?.error) setError(res.error);
+    });
+  }
+
+  return (
+    <tr>
+      <td>{fmtDate(c.fecha)}</td>
+      <td>{c.clienteNombre}</td>
+      <td>{c.nombreDevuelto} ({c.talleDevuelto || "Único"}) — {fmt(c.precioDevuelto)}</td>
+      <td>{c.nombreNuevo} ({c.talleNuevo || "Único"}) — {fmt(c.precioNuevo)}</td>
+      <td className="num">{fmt(c.diferencia)}</td>
+      <td>
+        {c.tipo === "venta" ? (
+          <span className="tag calzado">Cobrado</span>
+        ) : c.tipo === "nota_credito" ? (
+          <span className="hint">Nota de crédito</span>
+        ) : (
+          <span className="hint">Sin diferencia</span>
+        )}
+      </td>
+      <td>{c.vendedor}</td>
+      {isAdmin && (
+        <td>
+          <button className="btn danger small" type="button" onClick={handleDelete} disabled={pending}>
+            <IconTrash size={14} />
+          </button>
+          {error && <div style={{ color: "var(--danger)", fontSize: 11, marginTop: 4 }}>{error}</div>}
+        </td>
+      )}
+    </tr>
   );
 }
 
@@ -177,6 +260,7 @@ function RegistrarCambioForm({
   const [observaciones, setObservaciones] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<string | null>(null);
+  const [notaGenerada, setNotaGenerada] = useState<{ codigo: string; clienteNombre: string; monto: number; fecha: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const precioDevuelto = devuelto
@@ -191,6 +275,7 @@ function RegistrarCambioForm({
     e.preventDefault();
     setError(null);
     setResultado(null);
+    setNotaGenerada(null);
     if (!cliente) {
       setError("Elegí un cliente");
       return;
@@ -199,6 +284,7 @@ function RegistrarCambioForm({
       setError("Elegí el producto devuelto y el producto nuevo");
       return;
     }
+    const clienteNombre = cliente.nombre;
     startTransition(async () => {
       const res = await registrarCambio({
         clienteId: cliente.id,
@@ -217,6 +303,9 @@ function RegistrarCambioForm({
         setResultado(`Cliente pagó la diferencia: ${fmt(res.diferencia)} (${medioPago}).`);
       } else if (res.tipo === "nota_credito") {
         setResultado(`Se generó una nota de crédito a favor del cliente por ${fmt(Math.abs(res.diferencia))}.`);
+        if (res.notaCredito) {
+          setNotaGenerada({ codigo: res.notaCredito.codigo, clienteNombre, monto: Math.abs(res.diferencia), fecha });
+        }
       } else {
         setResultado("Cambio registrado sin diferencia.");
       }
@@ -288,7 +377,16 @@ function RegistrarCambioForm({
       )}
 
       {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
-      {resultado && <p className="hint" style={{ flexBasis: "100%" }}>{resultado}</p>}
+      {resultado && (
+        <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <p className="hint" style={{ margin: 0 }}>{resultado}</p>
+          {notaGenerada && (
+            <button type="button" className="btn ghost small" onClick={() => imprimirNotaCredito(notaGenerada)}>
+              Generar comprobante
+            </button>
+          )}
+        </div>
+      )}
 
       <button className="btn" type="submit" disabled={pending} style={{ flexBasis: "100%" }}>
         Registrar cambio

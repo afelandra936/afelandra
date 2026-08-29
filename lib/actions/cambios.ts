@@ -13,6 +13,15 @@ function revalidateAfterCambio() {
   }
 }
 
+async function generarCodigoNotaUnico(tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]): Promise<string> {
+  for (let intento = 0; intento < 10; intento++) {
+    const codigo = "NC" + Math.random().toString(36).slice(2, 8).toUpperCase();
+    const existe = await tx.notaCredito.findUnique({ where: { codigo } });
+    if (!existe) return codigo;
+  }
+  throw new Error("No se pudo generar un código de nota de crédito único, probá de nuevo");
+}
+
 export type CambioDTO = {
   id: string;
   fecha: string;
@@ -41,7 +50,10 @@ export async function registrarCambio(data: {
   vendedor: string;
   fecha: string;
   observaciones?: string;
-}): Promise<{ error: string } | { ok: true; diferencia: number; tipo: "venta" | "nota_credito" | "sin_diferencia" }> {
+}): Promise<
+  | { error: string }
+  | { ok: true; diferencia: number; tipo: "venta" | "nota_credito" | "sin_diferencia"; notaCredito?: { id: string; codigo: string } }
+> {
   await requireRole("admin", "empleada");
 
   if (!data.clienteId) return { error: "Elegí un cliente" };
@@ -99,7 +111,7 @@ export async function registrarCambio(data: {
 
     if (Math.abs(diferencia) < 0.01) {
       await tx.cambio.create({ data: datosBase });
-      return "sin_diferencia" as const;
+      return { tipo: "sin_diferencia" as const };
     }
 
     if (diferencia > 0) {
@@ -126,12 +138,14 @@ export async function registrarCambio(data: {
         },
       });
       await tx.cambio.create({ data: { ...datosBase, venta: { connect: { id: venta.id } } } });
-      return "venta" as const;
+      return { tipo: "venta" as const };
     }
 
     const montoNota = Math.abs(diferencia);
+    const codigo = await generarCodigoNotaUnico(tx);
     const notaCredito = await tx.notaCredito.create({
       data: {
+        codigo,
         fecha,
         cliente: { connect: { id: cliente.id } },
         montoInicial: montoNota,
@@ -142,11 +156,55 @@ export async function registrarCambio(data: {
       },
     });
     await tx.cambio.create({ data: { ...datosBase, notaCredito: { connect: { id: notaCredito.id } } } });
-    return "nota_credito" as const;
+    return { tipo: "nota_credito" as const, notaCredito: { id: notaCredito.id, codigo: notaCredito.codigo } };
   });
 
   revalidateAfterCambio();
-  return { ok: true, diferencia, tipo: resultado };
+  return { ok: true, diferencia, tipo: resultado.tipo, notaCredito: "notaCredito" in resultado ? resultado.notaCredito : undefined };
+}
+
+/** Elimina un cambio cargado por error: revierte el stock (repone lo que se había
+ * descontado, descuenta lo que se había repuesto) y borra la venta o nota de crédito
+ * que hubiera generado — salvo que esa nota de crédito ya se haya usado como pago en
+ * otra venta, en cuyo caso rechaza el borrado para no dejar un pago fantasma. */
+export async function eliminarCambio(id: string): Promise<{ error: string } | void> {
+  await requireRole("admin");
+
+  const cambio = await prisma.cambio.findUnique({ where: { id } });
+  if (!cambio) return { error: "El cambio no existe" };
+
+  if (cambio.notaCreditoId) {
+    const nota = await prisma.notaCredito.findUnique({ where: { id: cambio.notaCreditoId } });
+    if (nota && Number(nota.saldo) < Number(nota.montoInicial)) {
+      return { error: "No se puede eliminar: la nota de crédito que generó este cambio ya se usó como pago en otra venta" };
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Borrar el Cambio primero: libera las FK hacia la Venta/NotaCredito que pudiera tener.
+    await tx.cambio.delete({ where: { id } });
+
+    if (cambio.ventaId) {
+      await tx.pagoVenta.deleteMany({ where: { ventaId: cambio.ventaId } });
+      await tx.venta.delete({ where: { id: cambio.ventaId } });
+    }
+    if (cambio.notaCreditoId) {
+      await tx.notaCredito.delete({ where: { id: cambio.notaCreditoId } });
+    }
+
+    const [devuelto, nuevo] = await Promise.all([
+      tx.producto.findUnique({ where: { id: cambio.productoDevueltoId } }),
+      tx.producto.findUnique({ where: { id: cambio.productoNuevoId } }),
+    ]);
+    if (devuelto) {
+      await tx.producto.update({ where: { id: devuelto.id }, data: { stock: Math.max(0, devuelto.stock - 1) } });
+    }
+    if (nuevo) {
+      await tx.producto.update({ where: { id: nuevo.id }, data: { stock: { increment: 1 } } });
+    }
+  });
+
+  revalidateAfterCambio();
 }
 
 export async function listarCambios(): Promise<CambioDTO[]> {
@@ -175,6 +233,7 @@ export async function listarCambios(): Promise<CambioDTO[]> {
 
 export type NotaCreditoDTO = {
   id: string;
+  codigo: string;
   clienteId: string;
   clienteNombre: string;
   montoInicial: number;
@@ -185,6 +244,7 @@ export type NotaCreditoDTO = {
 
 function notaADTO(n: {
   id: string;
+  codigo: string;
   clienteId: string;
   cliente: { nombre: string };
   montoInicial: unknown;
@@ -194,6 +254,7 @@ function notaADTO(n: {
 }): NotaCreditoDTO {
   return {
     id: n.id,
+    codigo: n.codigo,
     clienteId: n.clienteId,
     clienteNombre: n.cliente.nombre,
     montoInicial: toNumber(n.montoInicial as never),
