@@ -13,7 +13,7 @@ export async function getCoeficientesPorMarca(): Promise<CoeficientesPorMarca> {
   const filas = await prisma.coeficienteMarca.findMany();
   const resultado: CoeficientesPorMarca = {};
   for (const f of filas) {
-    resultado[f.marca] = { debito: f.debito, credito3: f.credito3, credito6: f.credito6, contado: f.contado };
+    resultado[f.marca] = { debito: f.debito, transferencia: f.transferencia, credito3: f.credito3, credito6: f.credito6, contado: f.contado };
   }
   return resultado;
 }

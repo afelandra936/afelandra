@@ -17,6 +17,7 @@ import { exportarDatos, importarDatos } from "@/lib/actions/backup";
 
 type ConfigDTO = {
   debito: number;
+  transferencia: number;
   credito3: number;
   credito6: number;
   contado: number;
@@ -33,6 +34,7 @@ type ConfigDTO = {
 type CoeficienteMarcaDTO = {
   marca: string;
   debito: number;
+  transferencia: number;
   credito3: number;
   credito6: number;
   contado: number;
@@ -171,6 +173,7 @@ export function ResumenView({
 
 function CoeficientesForm({ config }: { config: ConfigDTO }) {
   const [debito, setDebito] = useState(String(config.debito));
+  const [transferencia, setTransferencia] = useState(String(config.transferencia));
   const [credito3, setCredito3] = useState(String(config.credito3));
   const [credito6, setCredito6] = useState(String(config.credito6));
   const [contado, setContado] = useState(String(config.contado));
@@ -183,6 +186,7 @@ function CoeficientesForm({ config }: { config: ConfigDTO }) {
     startTransition(async () => {
       await actualizarCoeficientes({
         debito: Number(debito),
+        transferencia: Number(transferencia),
         credito3: Number(credito3),
         credito6: Number(credito6),
         contado: Number(contado),
@@ -195,8 +199,12 @@ function CoeficientesForm({ config }: { config: ConfigDTO }) {
     <form onSubmit={handleSubmit}>
       <div className="config-grid">
         <div className="field">
-          <label htmlFor="cf-debito">Débito / transferencia (x)</label>
+          <label htmlFor="cf-debito">Débito (x)</label>
           <input id="cf-debito" type="number" step="0.01" value={debito} onChange={(e) => setDebito(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cf-transferencia">Transferencia (x)</label>
+          <input id="cf-transferencia" type="number" step="0.01" value={transferencia} onChange={(e) => setTransferencia(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="cf-credito3">Crédito 3 cuotas (x)</label>
@@ -242,7 +250,8 @@ function CoeficientesMarcaSection({
           <thead>
             <tr>
               <th>Marca</th>
-              <th>Débito/transf. (x)</th>
+              <th>Débito (x)</th>
+              <th>Transferencia (x)</th>
               <th>3 cuotas (x)</th>
               <th>6 cuotas (x)</th>
               <th>Desc. efectivo (%)</th>
@@ -254,6 +263,7 @@ function CoeficientesMarcaSection({
               <tr key={c.marca}>
                 <td>{c.marca}</td>
                 <td className="num">{c.debito}</td>
+                <td className="num">{c.transferencia}</td>
                 <td className="num">{c.credito3}</td>
                 <td className="num">{c.credito6}</td>
                 <td className="num">{c.contado}</td>
@@ -296,6 +306,7 @@ function CoeficienteMarcaForm({
 }) {
   const [marca, setMarca] = useState(editando?.marca ?? "");
   const [debito, setDebito] = useState(String(editando?.debito ?? ""));
+  const [transferencia, setTransferencia] = useState(String(editando?.transferencia ?? ""));
   const [credito3, setCredito3] = useState(String(editando?.credito3 ?? ""));
   const [credito6, setCredito6] = useState(String(editando?.credito6 ?? ""));
   const [contado, setContado] = useState(String(editando?.contado ?? ""));
@@ -315,6 +326,7 @@ function CoeficienteMarcaForm({
       try {
         await guardarCoeficientesMarca(marca, {
           debito: Number(debito),
+          transferencia: Number(transferencia),
           credito3: Number(credito3),
           credito6: Number(credito6),
           contado: Number(contado),
@@ -324,6 +336,7 @@ function CoeficienteMarcaForm({
         else {
           setMarca("");
           setDebito("");
+          setTransferencia("");
           setCredito3("");
           setCredito6("");
           setContado("");
@@ -350,8 +363,12 @@ function CoeficienteMarcaForm({
           )}
         </div>
         <div className="field">
-          <label htmlFor="cfm-debito">Débito / transferencia (x)</label>
+          <label htmlFor="cfm-debito">Débito (x)</label>
           <input id="cfm-debito" type="number" step="0.01" value={debito} onChange={(e) => setDebito(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cfm-transferencia">Transferencia (x)</label>
+          <input id="cfm-transferencia" type="number" step="0.01" value={transferencia} onChange={(e) => setTransferencia(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="cfm-credito3">Crédito 3 cuotas (x)</label>

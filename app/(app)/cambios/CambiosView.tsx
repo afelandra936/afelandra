@@ -40,7 +40,7 @@ type NotaCreditoDTO = {
   fecha: string;
 };
 
-type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
+type ConfigDTO = { debito: number; transferencia: number; credito3: number; credito6: number; contado: number };
 type CoeficientesPorMarcaDTO = Record<string, ConfigDTO>;
 
 /** Abre una ventana angosta con el comprobante de la nota de crédito, lista para imprimir

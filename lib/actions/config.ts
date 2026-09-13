@@ -12,6 +12,7 @@ function revalidateAll() {
 
 export async function actualizarCoeficientes(data: {
   debito: number;
+  transferencia: number;
   credito3: number;
   credito6: number;
   contado: number;
@@ -43,7 +44,7 @@ export async function quitarItemLista(campo: ListaCampo, valor: string) {
 
 export async function guardarCoeficientesMarca(
   marca: string,
-  data: { debito: number; credito3: number; credito6: number; contado: number }
+  data: { debito: number; transferencia: number; credito3: number; credito6: number; contado: number }
 ) {
   await requireRole("admin");
   const nombre = marca.trim();

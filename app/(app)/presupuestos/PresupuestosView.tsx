@@ -13,7 +13,7 @@ type PromocionDTO = {
   valorPorcentaje: number | null;
 };
 
-type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
+type ConfigDTO = { debito: number; transferencia: number; credito3: number; credito6: number; contado: number };
 type CoeficientesPorMarcaDTO = Record<string, ConfigDTO>;
 
 type Item = {

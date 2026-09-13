@@ -72,6 +72,7 @@ model Venta {
   @@index([clienteId])
   @@index([promocionId])
   @@index([fecha])
+  @@index([createdAt])
 }
 
 // ---------- Promociones ----------
@@ -284,10 +285,11 @@ model Cliente {
 
 model Config {
   id                 Int      @id @default(1)
-  debito             Decimal  @default(2.20) @db.Decimal(6, 2)
-  credito3           Decimal  @default(2.42) @db.Decimal(6, 2)
-  credito6           Decimal  @default(2.82) @db.Decimal(6, 2)
-  contado            Decimal  @default(10)   @db.Decimal(6, 2) // % descuento efectivo
+  debito             Decimal  @default(2.20) @db.Decimal(6, 3)
+  transferencia      Decimal  @default(2.20) @db.Decimal(6, 3)
+  credito3           Decimal  @default(2.42) @db.Decimal(6, 3)
+  credito6           Decimal  @default(2.82) @db.Decimal(6, 3)
+  contado            Decimal  @default(10)   @db.Decimal(6, 3) // % descuento efectivo
   pinAdminHash       String?
   pinVendedorHash    String?
   preguntaAdmin         String?
@@ -305,11 +307,12 @@ model Config {
 
 /** Coeficientes propios por marca; si una marca no tiene fila acá, se usan los de Config. */
 model CoeficienteMarca {
-  id        String   @id @default(cuid())
-  marca     String   @unique
-  debito    Decimal  @db.Decimal(6, 2)
-  credito3  Decimal  @db.Decimal(6, 2)
-  credito6  Decimal  @db.Decimal(6, 2)
-  contado   Decimal  @db.Decimal(6, 2)
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  marca         String   @unique
+  debito        Decimal  @db.Decimal(6, 3)
+  transferencia Decimal  @db.Decimal(6, 3)
+  credito3      Decimal  @db.Decimal(6, 3)
+  credito6      Decimal  @db.Decimal(6, 3)
+  contado       Decimal  @db.Decimal(6, 3)
+  updatedAt     DateTime @updatedAt
 }

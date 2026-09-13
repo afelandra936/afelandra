@@ -41,6 +41,7 @@ type VentaDTO = {
   precioVenta: number;
   promocionNombre: string | null;
   pagos: { medio: string; monto: number }[];
+  productoObservaciones: string | null;
 };
 
 type PromocionDTO = {
@@ -50,7 +51,7 @@ type PromocionDTO = {
   valorPorcentaje: number | null;
 };
 
-type ConfigDTO = { debito: number; credito3: number; credito6: number; contado: number };
+type ConfigDTO = { debito: number; transferencia: number; credito3: number; credito6: number; contado: number };
 type CoeficientesPorMarcaDTO = Record<string, ConfigDTO>;
 
 type Props = {
@@ -136,6 +137,7 @@ export function VentasView(props: Props) {
 
 function VentaRow({ venta, isAdmin }: { venta: VentaDTO; isAdmin: boolean }) {
   const [pending, startTransition] = useTransition();
+  const [mostrarObs, setMostrarObs] = useState(false);
 
   function handleDelete() {
     if (!confirm(`¿Eliminar la venta de ${venta.nombre}?`)) return;
@@ -146,7 +148,19 @@ function VentaRow({ venta, isAdmin }: { venta: VentaDTO; isAdmin: boolean }) {
     <tr>
       <td>{fmtDate(venta.fecha)}</td>
       <td>
-        {venta.nombre} {venta.talle && <span className="num">({venta.talle})</span>}
+        <button
+          type="button"
+          onClick={() => setMostrarObs((v) => !v)}
+          style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}
+          title="Ver observación de esta variante"
+        >
+          {venta.nombre} {venta.talle && <span className="num">({venta.talle})</span>}
+        </button>
+        {mostrarObs && (
+          <div className="hint" style={{ marginTop: 4, fontStyle: venta.productoObservaciones ? "italic" : "normal" }}>
+            {venta.productoObservaciones || "Sin observación cargada."}
+          </div>
+        )}
       </td>
       <td className="num">{venta.cantidad}</td>
       <td>

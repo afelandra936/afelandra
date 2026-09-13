@@ -19,7 +19,7 @@ export default async function CambiosPage() {
       cambios={cambios}
       notasCredito={notasCredito}
       vendedoresNombres={config.vendedores}
-      config={serialize({ debito: config.debito, credito3: config.credito3, credito6: config.credito6, contado: config.contado })}
+      config={serialize({ debito: config.debito, transferencia: config.transferencia, credito3: config.credito3, credito6: config.credito6, contado: config.contado })}
       coeficientesPorMarca={serialize(coeficientesPorMarca)}
     />
   );

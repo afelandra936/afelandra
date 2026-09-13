@@ -10,7 +10,11 @@ export default async function VentasPage() {
   const hoy = new Date();
 
   const [ventas, clientes, config, coeficientesPorMarca, charts, promociones] = await Promise.all([
-    prisma.venta.findMany({ orderBy: { fecha: "desc" }, take: 50, include: { pagos: true } }),
+    prisma.venta.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { pagos: true, producto: { select: { observaciones: true } } },
+    }),
     prisma.cliente.findMany({ select: { nombre: true }, orderBy: { nombre: "asc" } }),
     getConfig(),
     getCoeficientesPorMarca(),
@@ -27,10 +31,12 @@ export default async function VentasPage() {
     }),
   ]);
 
+  const ventasConObs = ventas.map((v) => ({ ...v, productoObservaciones: v.producto.observaciones }));
+
   return (
     <VentasView
       role={session!.role}
-      ventas={serialize(ventas)}
+      ventas={serialize(ventasConObs)}
       clientesNombres={clientes.map((c) => c.nombre)}
       vendedoresNombres={config.vendedores}
       config={serialize(config)}

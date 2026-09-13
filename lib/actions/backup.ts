@@ -43,12 +43,12 @@ export type BackupData = {
     telefono: string | null; instagram: string | null; cumple: string | null;
   }[];
   config: {
-    id: number; debito: number; credito3: number; credito6: number; contado: number;
+    id: number; debito: number; transferencia: number; credito3: number; credito6: number; contado: number;
     pinAdminHash: string | null; pinVendedorHash: string | null;
     talles: string[]; tallesIndumentaria: string[]; tiposCalzado: string[]; tiposAccesorio: string[];
   };
   coeficientesMarca: {
-    id: string; marca: string; debito: number; credito3: number; credito6: number; contado: number;
+    id: string; marca: string; debito: number; transferencia: number; credito3: number; credito6: number; contado: number;
   }[];
 };
 
@@ -219,7 +219,7 @@ export async function importarDatos(data: BackupData) {
 
     for (const c of data.coeficientesMarca) {
       await tx.coeficienteMarca.create({
-        data: { id: c.id, marca: c.marca, debito: c.debito, credito3: c.credito3, credito6: c.credito6, contado: c.contado },
+        data: { id: c.id, marca: c.marca, debito: c.debito, transferencia: c.transferencia, credito3: c.credito3, credito6: c.credito6, contado: c.contado },
       });
     }
 
@@ -227,6 +227,7 @@ export async function importarDatos(data: BackupData) {
       where: { id: 1 },
       data: {
         debito: data.config.debito,
+        transferencia: data.config.transferencia,
         credito3: data.config.credito3,
         credito6: data.config.credito6,
         contado: data.config.contado,

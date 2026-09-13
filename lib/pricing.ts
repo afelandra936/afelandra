@@ -14,6 +14,7 @@ export type Medio = (typeof MEDIOS)[number];
 
 export type CoeficientesConfig = {
   debito: number | string | Prisma.Decimal;
+  transferencia: number | string | Prisma.Decimal;
   credito3: number | string | Prisma.Decimal;
   credito6: number | string | Prisma.Decimal;
   contado: number | string | Prisma.Decimal;
@@ -43,8 +44,9 @@ export function ratioMedio(medio: string, config: CoeficientesConfig): number {
       return debito * (1 - toNumber(config.contado) / 100);
     case "Débito":
     case "Crédito 1 pago":
-    case "Transferencia":
       return debito;
+    case "Transferencia":
+      return toNumber(config.transferencia);
     case "Crédito 3 cuotas":
       return toNumber(config.credito3);
     case "Crédito 6 cuotas":
