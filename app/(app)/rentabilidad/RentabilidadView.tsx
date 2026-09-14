@@ -4,12 +4,9 @@ import { MEDIOS } from "@/lib/pricing";
 import { BarChart } from "@/components/charts/BarChart";
 import type { ChartEntry } from "@/lib/reports";
 
-const OPCIONES = [
-  { key: "7", label: "7 días" },
-  { key: "30", label: "30 días" },
-  { key: "90", label: "90 días" },
-  { key: "todo", label: "Todo" },
-];
+function haceDiasISO(hoy: Date, n: number): string {
+  return new Date(hoy.getTime() - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 type Data = {
   ventasTotales: number;
@@ -27,30 +24,57 @@ export function RentabilidadView({
   data,
   comisiones,
   ventasPorDia,
-  periodoActivo,
+  desde,
+  hasta,
 }: {
   data: Data;
   comisiones: ComisionVendedor[];
   ventasPorDia: VentaPorDia[];
-  periodoActivo: string;
+  desde: string;
+  hasta: string;
 }) {
+  const hoy = new Date();
+  const hoyISO = hoy.toISOString().slice(0, 10);
+  const OPCIONES = [
+    { key: "7", label: "7 días", desde: haceDiasISO(hoy, 7), hasta: hoyISO },
+    { key: "30", label: "30 días", desde: haceDiasISO(hoy, 30), hasta: hoyISO },
+    { key: "90", label: "90 días", desde: haceDiasISO(hoy, 90), hasta: hoyISO },
+    { key: "todo", label: "Todo", desde: "2000-01-01", hasta: hoyISO },
+  ];
+  const opcionActiva = OPCIONES.find((o) => o.desde === desde && o.hasta === hasta)?.key ?? null;
+
   return (
     <div className="view active">
       <header className="view-head">
         <div>
           <h1>Rentabilidad</h1>
-          <p>Ganancia real después de costo y medio de pago.</p>
+          <p>
+            Ganancia real después de costo y medio de pago. Del {fmtDate(`${desde}T12:00:00`)} al {fmtDate(`${hasta}T12:00:00`)}.
+          </p>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {OPCIONES.map((o) => (
-            <Link
-              key={o.key}
-              href={`/rentabilidad?periodo=${o.key}`}
-              className={`btn small ${o.key === periodoActivo ? "" : "ghost"}`}
-            >
-              {o.label}
-            </Link>
-          ))}
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <form action="/rentabilidad" method="get" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div className="field">
+              <label htmlFor="rp-desde">Desde</label>
+              <input id="rp-desde" type="date" name="desde" defaultValue={desde} max={hasta} />
+            </div>
+            <div className="field">
+              <label htmlFor="rp-hasta">Hasta</label>
+              <input id="rp-hasta" type="date" name="hasta" defaultValue={hasta} min={desde} />
+            </div>
+            <button className="btn small" type="submit">Ver</button>
+          </form>
+          <div style={{ display: "flex", gap: 6 }}>
+            {OPCIONES.map((o) => (
+              <Link
+                key={o.key}
+                href={`/rentabilidad?desde=${o.desde}&hasta=${o.hasta}`}
+                className={`btn small ${o.key === opcionActiva ? "" : "ghost"}`}
+              >
+                {o.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </header>
 

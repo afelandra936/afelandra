@@ -45,8 +45,8 @@ export async function getVentasCharts() {
   };
 }
 
-export async function getRentabilidad(dias: number | null) {
-  const where = dias ? { fecha: { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) } } : {};
+export async function getRentabilidad(desde: Date, hasta: Date) {
+  const where = { fecha: { gte: desde, lte: hasta } };
   const ventas = await prisma.venta.findMany({
     where,
     select: { nombre: true, proveedor: true, cantidad: true, precioVenta: true, costoUnitario: true },
@@ -88,8 +88,8 @@ const MEDIOS_COMISION = new Set(["Efectivo", "Transferencia"]);
 export type ComisionVendedor = { vendedor: string; totalComision: number; totalGeneral: number };
 
 /** Vendido por cada vendedor, separando lo cobrado en efectivo/transferencia (base de comisión) del resto. */
-export async function getComisionesVendedores(dias: number | null): Promise<ComisionVendedor[]> {
-  const where = dias ? { fecha: { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) } } : {};
+export async function getComisionesVendedores(desde: Date, hasta: Date): Promise<ComisionVendedor[]> {
+  const where = { fecha: { gte: desde, lte: hasta } };
   const ventas = await prisma.venta.findMany({
     where,
     select: { vendedor: true, cantidad: true, precioVenta: true, pagos: { select: { medio: true, monto: true } } },
@@ -115,8 +115,8 @@ export type VentaPorDia = { fecha: string; porMedio: Record<string, number>; tot
  * en ventas divididas). Los pagos con voucher no cuentan acá (esa plata ya entró el día
  * que se vendió el voucher); en cambio, la venta de un voucher sí, por su propio medio.
  */
-export async function getVentasPorDia(dias: number | null): Promise<VentaPorDia[]> {
-  const where = dias ? { fecha: { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) } } : {};
+export async function getVentasPorDia(desde: Date, hasta: Date): Promise<VentaPorDia[]> {
+  const where = { fecha: { gte: desde, lte: hasta } };
   const [ventas, vouchers] = await Promise.all([
     prisma.venta.findMany({
       where,
