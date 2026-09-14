@@ -63,6 +63,8 @@ type Props = {
   coeficientesPorMarca: CoeficientesPorMarcaDTO;
   charts: { topProductos: ChartEntry[]; topProveedores: ChartEntry[]; medios: ChartEntry[]; vendedores: ChartEntry[] } | null;
   promociones: PromocionDTO[];
+  desde: string;
+  hasta: string;
 };
 
 export function VentasView(props: Props) {
@@ -82,8 +84,31 @@ export function VentasView(props: Props) {
       </div>
 
       <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+          <p className="hint" style={{ margin: 0 }}>
+            {props.desde || props.hasta
+              ? `Ventas ${props.desde ? `desde el ${fmtDate(`${props.desde}T12:00:00`)}` : ""} ${props.hasta ? `hasta el ${fmtDate(`${props.hasta}T12:00:00`)}` : ""}`.trim()
+              : "Últimas 50 ventas cargadas."}
+          </p>
+          <form action="/ventas" method="get" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div className="field">
+              <label htmlFor="vf-desde">Desde</label>
+              <input id="vf-desde" type="date" name="desde" defaultValue={props.desde} />
+            </div>
+            <div className="field">
+              <label htmlFor="vf-hasta">Hasta</label>
+              <input id="vf-hasta" type="date" name="hasta" defaultValue={props.hasta} />
+            </div>
+            <button className="btn small" type="submit">Ver</button>
+            {(props.desde || props.hasta) && (
+              <a href="/ventas" className="btn ghost small">Quitar filtro</a>
+            )}
+          </form>
+        </div>
         {props.ventas.length === 0 ? (
-          <p className="empty">Todavía no cargaste ventas.</p>
+          <p className="empty">
+            {props.desde || props.hasta ? "No hay ventas en ese rango de fechas." : "Todavía no cargaste ventas."}
+          </p>
         ) : (
           <table>
             <thead>

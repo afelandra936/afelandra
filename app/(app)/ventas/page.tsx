@@ -5,14 +5,28 @@ import { getVentasCharts } from "@/lib/reports";
 import { serialize } from "@/lib/serialize";
 import { VentasView } from "./VentasView";
 
-export default async function VentasPage() {
+export default async function VentasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ desde?: string; hasta?: string }>;
+}) {
   const session = await getSession();
   const hoy = new Date();
+  const { desde, hasta } = await searchParams;
+  const hayFiltro = Boolean(desde || hasta);
 
   const [ventas, clientes, config, coeficientesPorMarca, charts, promociones] = await Promise.all([
     prisma.venta.findMany({
+      where: hayFiltro
+        ? {
+            fecha: {
+              ...(desde ? { gte: new Date(`${desde}T00:00:00`) } : {}),
+              ...(hasta ? { lte: new Date(`${hasta}T23:59:59.999`) } : {}),
+            },
+          }
+        : {},
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: hayFiltro ? 1000 : 50,
       include: { pagos: true, producto: { select: { observaciones: true } } },
     }),
     prisma.cliente.findMany({ select: { nombre: true }, orderBy: { nombre: "asc" } }),
@@ -43,6 +57,8 @@ export default async function VentasPage() {
       coeficientesPorMarca={serialize(coeficientesPorMarca)}
       charts={charts}
       promociones={serialize(promociones)}
+      desde={desde ?? ""}
+      hasta={hasta ?? ""}
     />
   );
 }
