@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { toNumber } from "@/lib/format";
 import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
 import { MEDIOS, precioUnitario, resolverCoeficientes } from "@/lib/pricing";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 function revalidateAfterCambio() {
@@ -167,11 +168,12 @@ export async function registrarCambio(data: {
  * descontado, descuenta lo que se había repuesto) y borra la venta o nota de crédito
  * que hubiera generado — salvo que esa nota de crédito ya se haya usado como pago en
  * otra venta, en cuyo caso rechaza el borrado para no dejar un pago fantasma. */
-export async function eliminarCambio(id: string): Promise<{ error: string } | void> {
+export async function eliminarCambio(id: string, responsable: string): Promise<{ error: string } | void> {
   await requireRole("admin");
 
   const cambio = await prisma.cambio.findUnique({ where: { id } });
   if (!cambio) return { error: "El cambio no existe" };
+  if (!responsable?.trim()) return { error: "Falta confirmar con el nombre de quién hace el cambio" };
 
   if (cambio.notaCreditoId) {
     const nota = await prisma.notaCredito.findUnique({ where: { id: cambio.notaCreditoId } });
@@ -204,6 +206,7 @@ export async function eliminarCambio(id: string): Promise<{ error: string } | vo
     }
   });
 
+  await registrarAuditoria("Cambio", id, `${cambio.nombreDevuelto} ↔ ${cambio.nombreNuevo}`, responsable);
   revalidateAfterCambio();
 }
 

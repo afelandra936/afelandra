@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 export async function crearCliente(data: {
@@ -28,13 +29,15 @@ export async function crearCliente(data: {
   revalidatePath("/clientes");
 }
 
-export async function eliminarCliente(id: string) {
+export async function eliminarCliente(id: string, responsable: string) {
   await requireRole("admin", "empleada");
+  let eliminado;
   try {
-    await prisma.cliente.delete({ where: { id } });
+    eliminado = await prisma.cliente.delete({ where: { id } });
   } catch {
     throw new Error("No se puede eliminar: el cliente tiene ventas, cambios o notas de crédito asociadas");
   }
+  await registrarAuditoria("Cliente", id, eliminado.nombre, responsable);
   revalidatePath("/clientes");
 }
 

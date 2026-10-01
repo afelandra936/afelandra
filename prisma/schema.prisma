@@ -211,6 +211,24 @@ model MovimientoCaja {
   @@index([fecha])
 }
 
+/** Auditoría de acciones destructivas (borrados). Como el acceso de Afelandra (admin) es
+ * compartido entre varias personas sin login individual, cada borrado importante pide
+ * confirmar con el nombre de quién lo hace — queda acá junto con el rol de la sesión y
+ * un detalle de lo que se borró, para poder revisarlo después. */
+model AuditLog {
+  id          String   @id @default(cuid())
+  accion      String   // "eliminar"
+  entidad     String   // "Venta", "Producto", "Cliente", etc.
+  entidadId   String
+  detalle     String
+  responsable String   // nombre tipeado por quien confirma la acción
+  role        String   // rol de la sesión que la hizo ("admin" | "empleada")
+  createdAt   DateTime @default(now())
+
+  @@index([entidad])
+  @@index([createdAt])
+}
+
 // ---------- Proveedores ----------
 
 model Proveedor {

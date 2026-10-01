@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { toNumber } from "@/lib/format";
 import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
 import { MEDIOS, precioUnitario, resolverCoeficientes } from "@/lib/pricing";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 type TalleInput = { talle: string; stock: number; codigo?: string };
@@ -343,12 +344,19 @@ export async function sumarStock(productoId: string, cantidad: number) {
   revalidatePath("/stock");
 }
 
-export async function eliminarProducto(id: string) {
+export async function eliminarProducto(id: string, responsable: string) {
   await requireRole("admin");
+  let eliminado;
   try {
-    await prisma.producto.delete({ where: { id } });
+    eliminado = await prisma.producto.delete({ where: { id } });
   } catch {
     throw new Error("No se puede eliminar: el producto tiene ventas o cambios asociados");
   }
+  await registrarAuditoria(
+    "Producto",
+    id,
+    `${eliminado.nombre}${eliminado.color ? ` · ${eliminado.color}` : ""}${eliminado.talle ? ` · Talle ${eliminado.talle}` : ""}`,
+    responsable
+  );
   revalidatePath("/stock");
 }

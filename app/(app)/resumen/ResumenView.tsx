@@ -15,6 +15,8 @@ import {
 } from "@/lib/actions/config";
 import { exportarDatos, importarDatos } from "@/lib/actions/backup";
 import { crearMovimientoCaja, eliminarMovimientoCaja, type MovimientoCajaDTO } from "@/lib/actions/caja";
+import type { AuditLogDTO } from "@/lib/actions/auditoria";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 
 type ConfigDTO = {
   debito: number;
@@ -56,6 +58,7 @@ export function ResumenView({
   cierreCaja,
   fechaCaja,
   movimientosCaja,
+  auditoria,
 }: {
   metrics: { facturacionHoy: number; facturacionMes: number; gananciaEstimadaMes: number; ticketPromedioMes: number };
   efectivoPorSucursal: { label: string; value: number }[];
@@ -65,6 +68,7 @@ export function ResumenView({
   cierreCaja: CierreCajaDTO;
   fechaCaja: string;
   movimientosCaja: MovimientoCajaDTO[];
+  auditoria: AuditLogDTO[];
 }) {
   const esHoy = fechaCaja === new Date().toISOString().slice(0, 10);
   return (
@@ -190,6 +194,40 @@ export function ResumenView({
         />
       </div>
 
+      <div className="section-title">Historial de auditoría</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <p className="hint" style={{ marginBottom: 12 }}>
+          Como el acceso de Afelandra es compartido, cada borrado importante pide confirmar con el nombre de quién lo hace — acá queda el
+          registro (últimas 200 acciones).
+        </p>
+        {auditoria.length === 0 ? (
+          <p className="empty">Sin acciones registradas todavía.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Acción</th>
+                <th>Detalle</th>
+                <th>Quién</th>
+                <th>Rol</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditoria.map((a) => (
+                <tr key={a.id}>
+                  <td>{fmtDate(a.createdAt)}</td>
+                  <td>Eliminó {a.entidad.toLowerCase()}</td>
+                  <td>{a.detalle}</td>
+                  <td>{a.responsable}</td>
+                  <td>{a.role === "admin" ? "Afelandra" : "Vendedor"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       <div className="section-title">Backup</div>
       <div className="card">
         <BackupControls />
@@ -222,8 +260,9 @@ function MovimientosCajaSection({ movimientos, fechaCaja }: { movimientos: Movim
   }
 
   function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este movimiento?")) return;
-    startDeleteTransition(() => eliminarMovimientoCaja(id));
+    const nombre = confirmarConNombre("¿Eliminar este movimiento?");
+    if (!nombre) return;
+    startDeleteTransition(() => eliminarMovimientoCaja(id, nombre));
   }
 
   return (

@@ -12,6 +12,7 @@ import {
   eliminarProducto,
   sumarStock,
 } from "@/lib/actions/productos";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 import type { Role } from "@/lib/auth";
 
 type ProductoDTO = {
@@ -515,11 +516,12 @@ function EditProductoRow({
   }
 
   function handleEliminar() {
-    if (!confirm(`¿Eliminar ${producto.nombre} (talle ${producto.talle || "Único"})?`)) return;
+    const nombreResponsable = confirmarConNombre(`¿Eliminar ${producto.nombre} (talle ${producto.talle || "Único"})?`);
+    if (!nombreResponsable) return;
     setError(null);
     startTransition(async () => {
       try {
-        await eliminarProducto(producto.id);
+        await eliminarProducto(producto.id, nombreResponsable);
         onDone();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error");

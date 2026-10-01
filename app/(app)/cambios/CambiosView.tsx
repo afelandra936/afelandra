@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, resolverCoeficientes } from "@/lib/pricing";
 import { registrarCambio, eliminarCambio } from "@/lib/actions/cambios";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 import { IconTrash } from "@tabler/icons-react";
 import { buscarClientes, type ClienteBusqueda } from "@/lib/actions/clientes";
 import {
@@ -204,10 +205,13 @@ function CambioRow({ cambio: c, isAdmin }: { cambio: CambioDTO; isAdmin: boolean
   const [pending, startTransition] = useTransition();
 
   function handleDelete() {
-    if (!confirm(`¿Eliminar este cambio de ${c.clienteNombre}? Se revierte el stock y, si generó una venta o nota de crédito, también se borra.`)) return;
+    const nombre = confirmarConNombre(
+      `¿Eliminar este cambio de ${c.clienteNombre}? Se revierte el stock y, si generó una venta o nota de crédito, también se borra.`
+    );
+    if (!nombre) return;
     setError(null);
     startTransition(async () => {
-      const res = await eliminarCambio(c.id);
+      const res = await eliminarCambio(c.id, nombre);
       if (res?.error) setError(res.error);
     });
   }

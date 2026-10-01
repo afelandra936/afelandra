@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 export async function crearGasto(data: { concepto: string; tipo: "fijo" | "variable"; monto: number; fecha?: string }) {
@@ -22,9 +23,10 @@ export async function crearGasto(data: { concepto: string; tipo: "fijo" | "varia
   revalidatePath("/rentabilidad");
 }
 
-export async function eliminarGasto(id: string) {
+export async function eliminarGasto(id: string, responsable: string) {
   await requireRole("admin");
-  await prisma.gasto.delete({ where: { id } });
+  const eliminado = await prisma.gasto.delete({ where: { id } });
+  await registrarAuditoria("Gasto", id, `${eliminado.concepto} — $${Number(eliminado.monto).toLocaleString("es-AR")}`, responsable);
   revalidatePath("/gastos");
   revalidatePath("/resumen");
   revalidatePath("/rentabilidad");

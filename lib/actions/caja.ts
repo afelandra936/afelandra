@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { toNumber } from "@/lib/format";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 export type MovimientoCajaDTO = {
@@ -35,9 +36,15 @@ export async function crearMovimientoCaja(data: {
   revalidatePath("/resumen");
 }
 
-export async function eliminarMovimientoCaja(id: string) {
+export async function eliminarMovimientoCaja(id: string, responsable: string) {
   await requireRole("admin");
-  await prisma.movimientoCaja.delete({ where: { id } });
+  const eliminado = await prisma.movimientoCaja.delete({ where: { id } });
+  await registrarAuditoria(
+    "Movimiento de caja",
+    id,
+    `${eliminado.tipo === "ingreso" ? "Ingreso" : "Retiro"} — $${Number(eliminado.monto).toLocaleString("es-AR")} — ${eliminado.motivo}`,
+    responsable
+  );
   revalidatePath("/resumen");
 }
 

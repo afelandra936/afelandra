@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { toNumber } from "@/lib/format";
 import { MEDIOS } from "@/lib/pricing";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 function revalidateAfterVoucher() {
@@ -113,14 +114,16 @@ export async function listarVouchers(): Promise<VoucherDTO[]> {
 }
 
 /** Solo se puede borrar un voucher que nunca se usó como pago en ninguna venta. */
-export async function eliminarVoucher(id: string): Promise<{ error: string } | void> {
+export async function eliminarVoucher(id: string, responsable: string): Promise<{ error: string } | void> {
   await requireRole("admin");
+  if (!responsable?.trim()) return { error: "Falta confirmar con el nombre de quién hace el cambio" };
 
   const usado = await prisma.pagoVenta.findFirst({ where: { voucherId: id } });
   if (usado) {
     return { error: "No se puede eliminar: este voucher ya se usó como pago en una venta" };
   }
 
-  await prisma.voucher.delete({ where: { id } });
+  const eliminado = await prisma.voucher.delete({ where: { id } });
+  await registrarAuditoria("Voucher", id, `${eliminado.codigo} — $${Number(eliminado.montoInicial).toLocaleString("es-AR")}`, responsable);
   revalidateAfterVoucher();
 }

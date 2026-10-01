@@ -3,6 +3,7 @@ import { getConfig } from "@/lib/config";
 import { toNumber } from "@/lib/format";
 import { serialize } from "@/lib/serialize";
 import { MEDIOS } from "@/lib/pricing";
+import { listarAuditoria } from "@/lib/actions/auditoria";
 import { ResumenView } from "./ResumenView";
 
 export default async function ResumenPage({
@@ -30,6 +31,7 @@ export default async function ResumenPage({
     ventasCaja,
     vouchersCaja,
     movimientosCaja,
+    auditoria,
   ] = await Promise.all([
     prisma.venta.findMany({ where: { fecha: { gte: inicioHoy } }, include: { pagos: true } }),
     prisma.venta.findMany({ where: { fecha: { gte: inicioMes } } }),
@@ -41,6 +43,7 @@ export default async function ResumenPage({
     prisma.venta.findMany({ where: { fecha: { gte: inicioCaja, lte: finCaja } }, include: { pagos: true } }),
     prisma.voucher.findMany({ where: { fecha: { gte: inicioCaja, lte: finCaja } } }),
     prisma.movimientoCaja.findMany({ where: { fecha: { gte: inicioCaja, lte: finCaja } }, orderBy: { createdAt: "desc" } }),
+    listarAuditoria(),
   ]);
 
   const facturacionHoy = ventasHoy.reduce((acc, v) => acc + toNumber(v.precioVenta) * v.cantidad, 0);
@@ -102,6 +105,7 @@ export default async function ResumenPage({
       movimientosCaja={serialize(
         movimientosCaja.map((m) => ({ id: m.id, fecha: m.fecha.toISOString(), tipo: m.tipo, monto: m.monto, motivo: m.motivo }))
       )}
+      auditoria={auditoria}
     />
   );
 }

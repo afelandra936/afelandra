@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { IconTrash, IconCake } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { crearCliente, eliminarCliente } from "@/lib/actions/clientes";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 
 type ClienteDTO = {
   id: string;
@@ -78,8 +79,9 @@ function ClienteRow({ cliente }: { cliente: ClienteDTO }) {
   const [pending, startTransition] = useTransition();
 
   function handleDelete() {
-    if (!confirm(`¿Eliminar a ${cliente.nombre}?`)) return;
-    startTransition(() => eliminarCliente(cliente.id));
+    const nombre = confirmarConNombre(`¿Eliminar a ${cliente.nombre}?`);
+    if (!nombre) return;
+    startTransition(() => eliminarCliente(cliente.id, nombre));
   }
 
   return (

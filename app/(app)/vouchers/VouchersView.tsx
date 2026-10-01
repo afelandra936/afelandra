@@ -5,6 +5,7 @@ import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS } from "@/lib/pricing";
 import { crearVoucher, eliminarVoucher } from "@/lib/actions/vouchers";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 import type { Role } from "@/lib/auth";
 
 type VoucherDTO = {
@@ -78,10 +79,11 @@ function VoucherRow({ voucher, isAdmin }: { voucher: VoucherDTO; isAdmin: boolea
   const [pending, startTransition] = useTransition();
 
   function handleDelete() {
-    if (!confirm(`¿Eliminar el voucher ${voucher.codigo}?`)) return;
+    const nombre = confirmarConNombre(`¿Eliminar el voucher ${voucher.codigo}?`);
+    if (!nombre) return;
     setError(null);
     startTransition(async () => {
-      const res = await eliminarVoucher(voucher.id);
+      const res = await eliminarVoucher(voucher.id, nombre);
       if (res?.error) setError(res.error);
     });
   }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { getConfig, getCoeficientesPorMarca } from "@/lib/config";
 import { precioUnitario, factorPromocion, resolverCoeficientes } from "@/lib/pricing";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@/app/generated/prisma/client";
 
@@ -208,7 +209,7 @@ function fmtNum(value: unknown): string {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(Number(value));
 }
 
-export async function eliminarVenta(id: string) {
+export async function eliminarVenta(id: string, responsable: string) {
   await requireRole("admin");
 
   const venta = await prisma.venta.findUnique({ where: { id }, include: { pagos: true } });
@@ -249,5 +250,6 @@ export async function eliminarVenta(id: string) {
     ...notaCreditoRefunds,
   ]);
 
+  await registrarAuditoria("Venta", id, `${venta.nombre}${venta.talle ? ` (${venta.talle})` : ""} — ${fmtNum(venta.precioVenta)}`, responsable);
   revalidateAfterVenta();
 }

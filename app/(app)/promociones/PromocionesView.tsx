@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { crearPromocion, actualizarPromocion, eliminarPromocion, type PromocionInput } from "@/lib/actions/promociones";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 
 type PromocionDTO = {
   id: string;
@@ -94,11 +95,12 @@ function PromocionRow({ promocion }: { promocion: PromocionDTO }) {
   }
 
   function handleDelete() {
-    if (!confirm(`¿Eliminar la promoción "${promocion.nombre}"?`)) return;
+    const nombreResponsable = confirmarConNombre(`¿Eliminar la promoción "${promocion.nombre}"?`);
+    if (!nombreResponsable) return;
     setError(null);
     startTransition(async () => {
       try {
-        await eliminarPromocion(promocion.id);
+        await eliminarPromocion(promocion.id, nombreResponsable);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error");
       }

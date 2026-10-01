@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { crearGasto, eliminarGasto } from "@/lib/actions/gastos";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 
 type GastoDTO = { id: string; fecha: string; concepto: string; tipo: string; monto: number };
 
@@ -65,6 +66,12 @@ export function GastosView({
 function GastoRow({ gasto }: { gasto: GastoDTO }) {
   const [pending, startTransition] = useTransition();
 
+  function handleDelete() {
+    const nombre = confirmarConNombre(`¿Eliminar el gasto "${gasto.concepto}"?`);
+    if (!nombre) return;
+    startTransition(() => eliminarGasto(gasto.id, nombre));
+  }
+
   return (
     <tr>
       <td>{fmtDate(gasto.fecha)}</td>
@@ -72,7 +79,7 @@ function GastoRow({ gasto }: { gasto: GastoDTO }) {
       <td><span className={`tag ${gasto.tipo}`}>{gasto.tipo === "fijo" ? "Fijo" : "Variable"}</span></td>
       <td className="num">{fmt(gasto.monto)}</td>
       <td>
-        <button className="btn danger small" type="button" disabled={pending} onClick={() => startTransition(() => eliminarGasto(gasto.id))}>
+        <button className="btn danger small" type="button" disabled={pending} onClick={handleDelete}>
           <IconTrash size={14} />
         </button>
       </td>

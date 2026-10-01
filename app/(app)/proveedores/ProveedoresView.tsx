@@ -13,6 +13,7 @@ import {
   eliminarPagoProveedor,
   type RemitoItemInput,
 } from "@/lib/actions/proveedores";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 import {
   buscarModelosParaRemito,
   buscarColoresParaRemito,
@@ -129,11 +130,12 @@ function ProveedorRow({ proveedor }: { proveedor: ProveedorDTO }) {
   const [error, setError] = useState<string | null>(null);
 
   function handleDelete() {
-    if (!confirm(`¿Eliminar proveedor ${proveedor.nombre}?`)) return;
+    const nombreResponsable = confirmarConNombre(`¿Eliminar proveedor ${proveedor.nombre}?`);
+    if (!nombreResponsable) return;
     setError(null);
     startTransition(async () => {
       try {
-        await eliminarProveedor(proveedor.id);
+        await eliminarProveedor(proveedor.id, nombreResponsable);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error");
       }
@@ -684,8 +686,9 @@ function RemitosTable({ proveedores }: { proveedores: ProveedorDTO[] }) {
   if (filas.length === 0) return <p className="empty">Sin remitos cargados.</p>;
 
   function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este remito? Si tenía artículos cargados, se descuenta esa cantidad del stock.")) return;
-    startTransition(() => eliminarRemito(id));
+    const nombre = confirmarConNombre("¿Eliminar este remito? Si tenía artículos cargados, se descuenta esa cantidad del stock.");
+    if (!nombre) return;
+    startTransition(() => eliminarRemito(id, nombre));
   }
 
   return (
@@ -810,6 +813,12 @@ function PagosTable({ proveedores }: { proveedores: ProveedorDTO[] }) {
 
   if (filas.length === 0) return <p className="empty">Sin pagos cargados.</p>;
 
+  function handleDelete(id: string, proveedorNombre: string) {
+    const nombre = confirmarConNombre(`¿Eliminar este pago a ${proveedorNombre}?`);
+    if (!nombre) return;
+    startTransition(() => eliminarPagoProveedor(id, nombre));
+  }
+
   return (
     <table>
       <thead>
@@ -826,7 +835,7 @@ function PagosTable({ proveedores }: { proveedores: ProveedorDTO[] }) {
             <td>{pg.medio}</td>
             <td>{pg.nota ?? "—"}</td>
             <td>
-              <button className="btn danger small" type="button" disabled={pending} onClick={() => startTransition(() => eliminarPagoProveedor(pg.id))}>
+              <button className="btn danger small" type="button" disabled={pending} onClick={() => handleDelete(pg.id, pg.proveedorNombre)}>
                 <IconTrash size={14} />
               </button>
             </td>

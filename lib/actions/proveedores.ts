@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 function revalidateProveedores() {
@@ -69,13 +70,15 @@ export async function actualizarProveedor(
   revalidateProveedores();
 }
 
-export async function eliminarProveedor(id: string) {
+export async function eliminarProveedor(id: string, responsable: string) {
   await requireRole("admin");
+  let eliminado;
   try {
-    await prisma.proveedor.delete({ where: { id } });
+    eliminado = await prisma.proveedor.delete({ where: { id } });
   } catch {
     throw new Error("No se puede eliminar: tiene productos, remitos o pagos asociados");
   }
+  await registrarAuditoria("Proveedor", id, eliminado.nombre, responsable);
   revalidateProveedores();
 }
 
@@ -160,8 +163,11 @@ export async function crearRemito(data: {
   revalidateProveedores();
 }
 
-export async function eliminarRemito(id: string) {
+export async function eliminarRemito(id: string, responsable: string) {
   await requireRole("admin");
+
+  const remito = await prisma.remito.findUnique({ where: { id }, include: { proveedor: { select: { nombre: true } } } });
+  if (!remito) return;
 
   await prisma.$transaction(async (tx) => {
     const items = await tx.remitoItem.findMany({ where: { remitoId: id } });
@@ -175,6 +181,12 @@ export async function eliminarRemito(id: string) {
     await tx.remito.delete({ where: { id } });
   });
 
+  await registrarAuditoria(
+    "Remito",
+    id,
+    `${remito.proveedor.nombre}${remito.numero ? ` — N° ${remito.numero}` : ""} — $${Number(remito.montoSinIva).toLocaleString("es-AR")}`,
+    responsable
+  );
   revalidatePath("/stock");
   revalidateProveedores();
 }
@@ -201,8 +213,9 @@ export async function crearPagoProveedor(data: {
   revalidateProveedores();
 }
 
-export async function eliminarPagoProveedor(id: string) {
+export async function eliminarPagoProveedor(id: string, responsable: string) {
   await requireRole("admin");
-  await prisma.pagoProveedor.delete({ where: { id } });
+  const eliminado = await prisma.pagoProveedor.delete({ where: { id } });
+  await registrarAuditoria("Pago a proveedor", id, `${eliminado.medio} — $${Number(eliminado.monto).toLocaleString("es-AR")}`, responsable);
   revalidateProveedores();
 }

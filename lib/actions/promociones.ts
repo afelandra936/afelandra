@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/actions/auditoria";
 import { revalidatePath } from "next/cache";
 
 export type PromocionInput = {
@@ -64,8 +65,9 @@ export async function actualizarPromocion(id: string, data: PromocionInput) {
   revalidateAfterPromocion();
 }
 
-export async function eliminarPromocion(id: string) {
+export async function eliminarPromocion(id: string, responsable: string) {
   await requireRole("admin");
-  await prisma.promocion.delete({ where: { id } });
+  const eliminada = await prisma.promocion.delete({ where: { id } });
+  await registrarAuditoria("Promoción", id, eliminada.nombre, responsable);
   revalidateAfterPromocion();
 }

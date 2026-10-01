@@ -5,6 +5,7 @@ import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
 import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes, ratioMedio } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
+import { confirmarConNombre } from "@/lib/client/confirmar";
 import { buscarVoucherPorCodigo } from "@/lib/actions/vouchers";
 import { buscarNotaCreditoPorCliente } from "@/lib/actions/cambios";
 import {
@@ -165,8 +166,9 @@ function VentaRow({ venta, isAdmin }: { venta: VentaDTO; isAdmin: boolean }) {
   const [mostrarObs, setMostrarObs] = useState(false);
 
   function handleDelete() {
-    if (!confirm(`¿Eliminar la venta de ${venta.nombre}?`)) return;
-    startTransition(() => eliminarVenta(venta.id));
+    const nombre = confirmarConNombre(`¿Eliminar la venta de ${venta.nombre}?`);
+    if (!nombre) return;
+    startTransition(() => eliminarVenta(venta.id, nombre));
   }
 
   return (
