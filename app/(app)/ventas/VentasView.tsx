@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { IconTrash } from "@tabler/icons-react";
 import { fmt, fmtDate } from "@/lib/format";
-import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes } from "@/lib/pricing";
+import { MEDIOS, precioUnitario, factorPromocion, calcularMontoResto, resolverCoeficientes, ratioMedio } from "@/lib/pricing";
 import { registrarVentaCarrito, eliminarVenta, type ItemCarrito } from "@/lib/actions/ventas";
 import { buscarVoucherPorCodigo } from "@/lib/actions/vouchers";
 import { buscarNotaCreditoPorCliente } from "@/lib/actions/cambios";
@@ -293,6 +293,7 @@ function calcularDivisionCarrito(
   porItem: PorItem[];
   total: number;
   montoResto: number;
+  creditosConsumidos: { campo: "voucherId" | "notaCreditoId"; refId: string; medio: string; refMedio: string; monto: number }[];
 } {
   const costoTotalCarrito = itemsValidos.reduce((acc, it) => acc + it.producto.costo * (Number(it.cantidad) || 0), 0);
   const pagosNum = pagosParciales.map((p) => ({ medio: p.medio, monto: Number(p.monto) || 0 }));
@@ -303,11 +304,27 @@ function calcularDivisionCarrito(
   const marcaUnica = marcasEnCarrito.size === 1 ? [...marcasEnCarrito][0] : null;
   const coefResto = marcaUnica ? resolverCoeficientes(marcaUnica, config, coeficientesPorMarca) : config;
 
+  // Costo ya cubierto por los medios ingresados a mano — esos montos los eligió el
+  // usuario a propósito, no se les pone un tope.
+  const costoCubiertoPorPagos = pagosNum.reduce((acc, p) => acc + p.monto / ratioMedio(p.medio, coefResto), 0);
+
+  // Cada crédito (voucher/nota de crédito) solo "gasta" lo que hace falta para cubrir el
+  // costo restante del carrito — si cubre de sobra, el sobrante NO se cobra ni se
+  // descuenta del crédito: queda como saldo a favor para una compra futura. Se procesan
+  // en orden, cada uno restando del costo restante antes de que el siguiente lo use.
+  let costoRestanteParaCreditos = Math.max(0, costoTotalCarrito - costoCubiertoPorPagos);
+  const creditosConsumidos = creditos.map((c) => {
+    const ratio = ratioMedio(c.refMedio, coefResto);
+    const montoConsumido = Math.min(c.monto, costoRestanteParaCreditos * ratio);
+    costoRestanteParaCreditos = Math.max(0, costoRestanteParaCreditos - montoConsumido / ratio);
+    return { campo: c.campo, refId: c.refId, medio: c.medio, refMedio: c.refMedio, monto: montoConsumido };
+  });
+
   // Para el cálculo de costo cubierto, cada crédito entra con SU propio medio de
   // referencia (no con "Voucher"/"Nota de crédito", que no tienen coeficiente propio).
   const pagosParaCosto = [
     ...pagosNum,
-    ...creditos.map((c) => ({ medio: c.refMedio, monto: c.monto })),
+    ...creditosConsumidos.map((c) => ({ medio: c.refMedio, monto: c.monto })),
   ];
   const montoResto = calcularMontoResto(costoTotalCarrito, pagosParaCosto, medioResto, coefResto);
 
@@ -316,7 +333,7 @@ function calcularDivisionCarrito(
   // Cierre de caja lo puede excluir (esa plata ya se contó en otro momento).
   const pagosGlobal: { medio: string; monto: number; voucherId?: string; notaCreditoId?: string }[] = [
     ...pagosNum,
-    ...creditos.map((c) => ({ medio: c.medio, monto: c.monto, [c.campo]: c.refId })),
+    ...creditosConsumidos.map((c) => ({ medio: c.medio, monto: c.monto, [c.campo]: c.refId })),
     { medio: medioResto, monto: montoResto },
   ];
 
@@ -333,7 +350,7 @@ function calcularDivisionCarrito(
     return { id: it.id, pagos, total: totalItemConFactor };
   });
 
-  return { porItem, total, montoResto };
+  return { porItem, total, montoResto, creditosConsumidos };
 }
 
 function NuevaVentaForm(props: Props) {
@@ -658,8 +675,13 @@ function NuevaVentaForm(props: Props) {
         <div className="field" style={{ marginTop: 16 }}>
           <label>Créditos aplicados</label>
           <div style={{ height: 36, display: "flex", alignItems: "center", fontSize: 18, color: "var(--leaf)" }} className="num">
-            -{fmt(creditosActivos.reduce((acc, c) => acc + c.monto, 0))}
+            -{fmt((divisionCarrito?.creditosConsumidos ?? []).reduce((acc, c) => acc + c.monto, 0))}
           </div>
+          {divisionCarrito?.creditosConsumidos.some((c, i) => c.monto < creditosActivos[i]?.monto - 0.01) && (
+            <p className="hint" style={{ marginTop: 4 }}>
+              Esta compra no necesita todo el crédito disponible — el resto queda como saldo a favor para una próxima compra.
+            </p>
+          )}
         </div>
       )}
 
