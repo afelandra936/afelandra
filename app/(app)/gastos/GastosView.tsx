@@ -84,6 +84,7 @@ function NuevoGastoForm() {
   const [concepto, setConcepto] = useState("");
   const [tipo, setTipo] = useState<"fijo" | "variable">("fijo");
   const [monto, setMonto] = useState("");
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -92,8 +93,8 @@ function NuevoGastoForm() {
     setError(null);
     startTransition(async () => {
       try {
-        await crearGasto({ concepto, tipo, monto: Number(monto) });
-        setConcepto(""); setMonto("");
+        await crearGasto({ concepto, tipo, monto: Number(monto), fecha });
+        setConcepto(""); setMonto(""); setFecha(new Date().toISOString().slice(0, 10));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al guardar");
       }
@@ -116,6 +117,10 @@ function NuevoGastoForm() {
       <div className="field">
         <label htmlFor="g-monto">Monto</label>
         <input id="g-monto" type="number" step="0.01" min="0" value={monto} onChange={(e) => setMonto(e.target.value)} required />
+      </div>
+      <div className="field">
+        <label htmlFor="g-fecha">Fecha</label>
+        <input id="g-fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
       </div>
       {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
       <button className="btn" type="submit" disabled={pending}>Agregar gasto</button>
