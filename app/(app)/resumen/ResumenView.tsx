@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { IconX } from "@tabler/icons-react";
-import { fmt } from "@/lib/format";
+import { IconX, IconTrash } from "@tabler/icons-react";
+import { fmt, fmtDate } from "@/lib/format";
 import { BarList } from "@/components/ui/BarList";
 import {
   actualizarCoeficientes,
@@ -14,6 +14,7 @@ import {
   eliminarCoeficientesMarca,
 } from "@/lib/actions/config";
 import { exportarDatos, importarDatos } from "@/lib/actions/backup";
+import { crearMovimientoCaja, eliminarMovimientoCaja, type MovimientoCajaDTO } from "@/lib/actions/caja";
 
 type ConfigDTO = {
   debito: number;
@@ -53,6 +54,8 @@ export function ResumenView({
   coeficientesMarca,
   marcasProductos,
   cierreCaja,
+  fechaCaja,
+  movimientosCaja,
 }: {
   metrics: { facturacionHoy: number; facturacionMes: number; gananciaEstimadaMes: number; ticketPromedioMes: number };
   efectivoPorSucursal: { label: string; value: number }[];
@@ -60,7 +63,10 @@ export function ResumenView({
   coeficientesMarca: CoeficienteMarcaDTO[];
   marcasProductos: string[];
   cierreCaja: CierreCajaDTO;
+  fechaCaja: string;
+  movimientosCaja: MovimientoCajaDTO[];
 }) {
+  const esHoy = fechaCaja === new Date().toISOString().slice(0, 10);
   return (
     <div className="view active">
       <header className="view-head">
@@ -89,7 +95,19 @@ export function ResumenView({
         </div>
       </div>
 
-      <div className="section-title" style={{ marginTop: 0 }}>Cierre de caja de hoy</div>
+      <div
+        className="section-title"
+        style={{ marginTop: 0, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}
+      >
+        <span>Cierre de caja {esHoy ? "de hoy" : `del ${fmtDate(`${fechaCaja}T12:00:00`)}`}</span>
+        <form action="/resumen" method="get" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <div className="field">
+            <label htmlFor="rc-fecha">Fecha</label>
+            <input id="rc-fecha" type="date" name="caja" defaultValue={fechaCaja} />
+          </div>
+          <button className="btn small" type="submit">Ver</button>
+        </form>
+      </div>
       <div className="card" style={{ marginBottom: 24 }}>
         <table>
           <thead>
@@ -109,9 +127,18 @@ export function ResumenView({
         </table>
         {cierreCaja.voucherRedimidoHoy > 0 && (
           <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-            Pagado con vouchers hoy: {fmt(cierreCaja.voucherRedimidoHoy)} (no está en el total de arriba — esa plata ya se contó el día que se vendió cada voucher).
+            Pagado con vouchers ese día: {fmt(cierreCaja.voucherRedimidoHoy)} (no está en el total de arriba — esa plata ya se contó el día que se vendió cada voucher).
           </p>
         )}
+      </div>
+
+      <div className="section-title">Movimientos manuales de caja</div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <p className="hint" style={{ marginBottom: 12 }}>
+          Ingresos o retiros de efectivo que no son una venta (por ejemplo, sacar plata para un gasto personal o reponer vuelto). Se suman o
+          restan del Efectivo del cierre de caja del día que elijas.
+        </p>
+        <MovimientosCajaSection movimientos={movimientosCaja} fechaCaja={fechaCaja} />
       </div>
 
       <div className="section-title">Efectivo de hoy por sucursal</div>
@@ -167,6 +194,92 @@ export function ResumenView({
       <div className="card">
         <BackupControls />
       </div>
+    </div>
+  );
+}
+
+function MovimientosCajaSection({ movimientos, fechaCaja }: { movimientos: MovimientoCajaDTO[]; fechaCaja: string }) {
+  const [tipo, setTipo] = useState<"ingreso" | "retiro">("retiro");
+  const [monto, setMonto] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [fecha, setFecha] = useState(fechaCaja);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [pendingDelete, startDeleteTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      try {
+        await crearMovimientoCaja({ tipo, monto: Number(monto), motivo, fecha });
+        setMonto("");
+        setMotivo("");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error al guardar");
+      }
+    });
+  }
+
+  function handleDelete(id: string) {
+    if (!confirm("¿Eliminar este movimiento?")) return;
+    startDeleteTransition(() => eliminarMovimientoCaja(id));
+  }
+
+  return (
+    <div>
+      <form className="inline-form" onSubmit={handleSubmit} style={{ marginBottom: 16 }}>
+        <div className="field">
+          <label htmlFor="mc-fecha">Fecha</label>
+          <input id="mc-fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="mc-tipo">Tipo</label>
+          <select id="mc-tipo" value={tipo} onChange={(e) => setTipo(e.target.value as "ingreso" | "retiro")}>
+            <option value="retiro">Retiro</option>
+            <option value="ingreso">Ingreso</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="mc-monto">Monto</label>
+          <input id="mc-monto" type="number" step="0.01" min="0" value={monto} onChange={(e) => setMonto(e.target.value)} required />
+        </div>
+        <div className="field" style={{ minWidth: 220 }}>
+          <label htmlFor="mc-motivo">Motivo</label>
+          <input id="mc-motivo" placeholder="Gasto personal, vuelto..." value={motivo} onChange={(e) => setMotivo(e.target.value)} required />
+        </div>
+        {error && <p style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>{error}</p>}
+        <button className="btn small" type="submit" disabled={pending}>Registrar movimiento</button>
+      </form>
+
+      {movimientos.length === 0 ? (
+        <p className="empty">Sin movimientos manuales ese día.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Monto</th>
+              <th>Motivo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {movimientos.map((m) => (
+              <tr key={m.id}>
+                <td>{m.tipo === "ingreso" ? "Ingreso" : "Retiro"}</td>
+                <td className="num">{m.tipo === "ingreso" ? "+" : "-"}{fmt(m.monto)}</td>
+                <td>{m.motivo}</td>
+                <td>
+                  <button className="btn danger small" type="button" disabled={pendingDelete} onClick={() => handleDelete(m.id)}>
+                    <IconTrash size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

@@ -5,12 +5,32 @@ import { serialize } from "@/lib/serialize";
 import { MEDIOS } from "@/lib/pricing";
 import { ResumenView } from "./ResumenView";
 
-export default async function ResumenPage() {
+export default async function ResumenPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ caja?: string }>;
+}) {
   const hoy = new Date();
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
 
-  const [ventasHoy, ventasMes, gastosMes, config, coeficientesMarca, marcasProductos, vouchersHoy] = await Promise.all([
+  const { caja } = await searchParams;
+  const fechaCaja = caja || inicioHoy.toISOString().slice(0, 10);
+  const inicioCaja = new Date(`${fechaCaja}T00:00:00`);
+  const finCaja = new Date(`${fechaCaja}T23:59:59.999`);
+
+  const [
+    ventasHoy,
+    ventasMes,
+    gastosMes,
+    config,
+    coeficientesMarca,
+    marcasProductos,
+    vouchersHoy,
+    ventasCaja,
+    vouchersCaja,
+    movimientosCaja,
+  ] = await Promise.all([
     prisma.venta.findMany({ where: { fecha: { gte: inicioHoy } }, include: { pagos: true } }),
     prisma.venta.findMany({ where: { fecha: { gte: inicioMes } } }),
     prisma.gasto.findMany({ where: { fecha: { gte: inicioMes } } }),
@@ -18,6 +38,9 @@ export default async function ResumenPage() {
     prisma.coeficienteMarca.findMany({ orderBy: { marca: "asc" } }),
     prisma.producto.findMany({ distinct: ["marca"], select: { marca: true }, where: { marca: { not: "" } } }),
     prisma.voucher.findMany({ where: { fecha: { gte: inicioHoy } } }),
+    prisma.venta.findMany({ where: { fecha: { gte: inicioCaja, lte: finCaja } }, include: { pagos: true } }),
+    prisma.voucher.findMany({ where: { fecha: { gte: inicioCaja, lte: finCaja } } }),
+    prisma.movimientoCaja.findMany({ where: { fecha: { gte: inicioCaja, lte: finCaja } }, orderBy: { createdAt: "desc" } }),
   ]);
 
   const facturacionHoy = ventasHoy.reduce((acc, v) => acc + toNumber(v.precioVenta) * v.cantidad, 0);
@@ -36,26 +59,32 @@ export default async function ResumenPage() {
     }
   }
 
-  // Cierre de caja de hoy: total por medio de pago, sumando también la parte que le
-  // corresponde a cada medio en las ventas que se pagaron divididas entre varios.
+  // Cierre de caja del día elegido: total por medio de pago, sumando también la parte
+  // que le corresponde a cada medio en las ventas que se pagaron divididas entre varios.
   // Los pagos con voucher NO suman acá (esa plata ya entró el día que se vendió el
-  // voucher); en cambio, vender un voucher hoy sí es plata nueva, así que se suma
-  // por el medio con el que se cobró el voucher.
-  const cierreCajaHoy = new Map<string, number>(MEDIOS.map((m) => [m, 0]));
-  let voucherRedimidoHoy = 0;
-  for (const v of ventasHoy) {
+  // voucher); en cambio, vender un voucher ese día sí es plata nueva, así que se suma
+  // por el medio con el que se cobró el voucher. Los movimientos manuales de caja
+  // (ingreso/retiro de efectivo que no es una venta) ajustan el Efectivo final.
+  const cierreCajaDia = new Map<string, number>(MEDIOS.map((m) => [m, 0]));
+  let voucherRedimidoCaja = 0;
+  for (const v of ventasCaja) {
     for (const pago of v.pagos) {
       if (pago.medio === "Voucher") {
-        voucherRedimidoHoy += toNumber(pago.monto);
+        voucherRedimidoCaja += toNumber(pago.monto);
         continue;
       }
-      cierreCajaHoy.set(pago.medio, (cierreCajaHoy.get(pago.medio) ?? 0) + toNumber(pago.monto));
+      cierreCajaDia.set(pago.medio, (cierreCajaDia.get(pago.medio) ?? 0) + toNumber(pago.monto));
     }
   }
-  for (const v of vouchersHoy) {
-    cierreCajaHoy.set(v.medioPago, (cierreCajaHoy.get(v.medioPago) ?? 0) + toNumber(v.montoInicial));
+  for (const v of vouchersCaja) {
+    cierreCajaDia.set(v.medioPago, (cierreCajaDia.get(v.medioPago) ?? 0) + toNumber(v.montoInicial));
   }
-  const cierreCajaTotal = [...cierreCajaHoy.values()].reduce((acc, v) => acc + v, 0);
+  let ajusteManual = 0;
+  for (const m of movimientosCaja) {
+    ajusteManual += m.tipo === "ingreso" ? toNumber(m.monto) : -toNumber(m.monto);
+  }
+  cierreCajaDia.set("Efectivo", (cierreCajaDia.get("Efectivo") ?? 0) + ajusteManual);
+  const cierreCajaTotal = [...cierreCajaDia.values()].reduce((acc, v) => acc + v, 0);
 
   return (
     <ResumenView
@@ -65,10 +94,14 @@ export default async function ResumenPage() {
       coeficientesMarca={serialize(coeficientesMarca)}
       marcasProductos={[...new Set(marcasProductos.map((p) => p.marca.trim()))].sort((a, b) => a.localeCompare(b, "es"))}
       cierreCaja={{
-        porMedio: MEDIOS.map((m) => ({ medio: m, monto: cierreCajaHoy.get(m) ?? 0 })),
+        porMedio: MEDIOS.map((m) => ({ medio: m, monto: cierreCajaDia.get(m) ?? 0 })),
         total: cierreCajaTotal,
-        voucherRedimidoHoy,
+        voucherRedimidoHoy: voucherRedimidoCaja,
       }}
+      fechaCaja={fechaCaja}
+      movimientosCaja={serialize(
+        movimientosCaja.map((m) => ({ id: m.id, fecha: m.fecha.toISOString(), tipo: m.tipo, monto: m.monto, motivo: m.motivo }))
+      )}
     />
   );
 }

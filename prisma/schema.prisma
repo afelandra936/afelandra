@@ -197,6 +197,20 @@ model Gasto {
   @@index([fecha])
 }
 
+/** Movimiento manual de efectivo en caja (no es una venta): retiro para un gasto
+ * personal, ingreso para completar vuelto, etc. Ajusta el Efectivo del Cierre de caja
+ * del día correspondiente para que refleje lo que realmente debería haber en la caja. */
+model MovimientoCaja {
+  id        String   @id @default(cuid())
+  fecha     DateTime @default(now())
+  tipo      String   // "ingreso" | "retiro"
+  monto     Decimal  @db.Decimal(12, 2)
+  motivo    String
+  createdAt DateTime @default(now())
+
+  @@index([fecha])
+}
+
 // ---------- Proveedores ----------
 
 model Proveedor {
